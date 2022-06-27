@@ -50,7 +50,7 @@ public class ModifyStatementImpl extends FilterableStatement<ModifyStatement, Re
         super(new DocFilterParams(schema, collection, false));
         this.mysqlxSession = mysqlxSession;
         if (criteria == null || criteria.trim().length() == 0) {
-            throw new XDevAPIError(Messages.getString("ModifyStatement.0", new String[] { "criteria" }));
+            throw new XDevAPIError(Messages.getString("ModifyStatement.0", new String[]{"criteria"}));
         }
         this.filterParams.setCriteria(criteria);
         if (!this.mysqlxSession.supportsPreparedStatements()) {

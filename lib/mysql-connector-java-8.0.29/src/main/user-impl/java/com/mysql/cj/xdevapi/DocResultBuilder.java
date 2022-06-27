@@ -53,11 +53,11 @@ import com.mysql.cj.result.Row;
  */
 public class DocResultBuilder implements ResultBuilder<DocResult> {
 
+    PropertySet pset;
     private ArrayList<Field> fields = new ArrayList<>();
     private ColumnDefinition metadata;
     private List<Row> rows = new ArrayList<>();
     private DocResult result;
-    PropertySet pset;
     private StatementExecuteOkBuilder statementExecuteOkBuilder = new StatementExecuteOkBuilder();
 
     public DocResultBuilder(MysqlxSession sess) {
@@ -72,7 +72,7 @@ public class DocResultBuilder implements ResultBuilder<DocResult> {
 
         } else if (entity instanceof Row) {
             if (this.metadata == null) {
-                this.metadata = new DefaultColumnDefinition(this.fields.toArray(new Field[] {}));
+                this.metadata = new DefaultColumnDefinition(this.fields.toArray(new Field[]{}));
             }
             this.rows.add(((Row) entity).setMetadata(this.metadata));
             return false;

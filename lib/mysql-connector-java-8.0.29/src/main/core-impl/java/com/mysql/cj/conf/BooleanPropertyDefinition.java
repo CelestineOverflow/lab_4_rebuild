@@ -40,23 +40,24 @@ public class BooleanPropertyDefinition extends AbstractPropertyDefinition<Boolea
 
     private static final long serialVersionUID = -7288366734350231540L;
 
-    public enum AllowableValues {
-        TRUE(true), FALSE(false), YES(true), NO(false);
+    public BooleanPropertyDefinition(PropertyKey key, Boolean defaultValue, boolean isRuntimeModifiable, String description, String sinceVersion,
+                                     String category, int orderInCategory) {
+        super(key, defaultValue, isRuntimeModifiable, description, sinceVersion, category, orderInCategory);
+    }
 
-        private boolean asBoolean;
-
-        private AllowableValues(boolean booleanValue) {
-            this.asBoolean = booleanValue;
-        }
-
-        public boolean asBoolean() {
-            return this.asBoolean;
+    public static Boolean booleanFrom(String name, String value, ExceptionInterceptor exceptionInterceptor) {
+        try {
+            return AllowableValues.valueOf(value.toUpperCase()).asBoolean();
+        } catch (Exception e) {
+            throw ExceptionFactory.createException(
+                    Messages.getString("PropertyDefinition.1",
+                            new Object[]{name, StringUtils.stringArrayToString(getBooleanAllowableValues(), "'", "', '", "' or '", "'"), value}),
+                    e, exceptionInterceptor);
         }
     }
 
-    public BooleanPropertyDefinition(PropertyKey key, Boolean defaultValue, boolean isRuntimeModifiable, String description, String sinceVersion,
-            String category, int orderInCategory) {
-        super(key, defaultValue, isRuntimeModifiable, description, sinceVersion, category, orderInCategory);
+    public static String[] getBooleanAllowableValues() {
+        return Arrays.stream(AllowableValues.values()).map(AllowableValues::toString).toArray(String[]::new);
     }
 
     @Override
@@ -71,7 +72,7 @@ public class BooleanPropertyDefinition extends AbstractPropertyDefinition<Boolea
 
     /**
      * Creates instance of BooleanProperty.
-     * 
+     *
      * @return RuntimeProperty
      */
     @Override
@@ -79,19 +80,18 @@ public class BooleanPropertyDefinition extends AbstractPropertyDefinition<Boolea
         return new BooleanProperty(this);
     }
 
-    public static Boolean booleanFrom(String name, String value, ExceptionInterceptor exceptionInterceptor) {
-        try {
-            return AllowableValues.valueOf(value.toUpperCase()).asBoolean();
-        } catch (Exception e) {
-            throw ExceptionFactory.createException(
-                    Messages.getString("PropertyDefinition.1",
-                            new Object[] { name, StringUtils.stringArrayToString(getBooleanAllowableValues(), "'", "', '", "' or '", "'"), value }),
-                    e, exceptionInterceptor);
-        }
-    }
+    public enum AllowableValues {
+        TRUE(true), FALSE(false), YES(true), NO(false);
 
-    public static String[] getBooleanAllowableValues() {
-        return Arrays.stream(AllowableValues.values()).map(AllowableValues::toString).toArray(String[]::new);
+        private boolean asBoolean;
+
+        private AllowableValues(boolean booleanValue) {
+            this.asBoolean = booleanValue;
+        }
+
+        public boolean asBoolean() {
+            return this.asBoolean;
+        }
     }
 
 }

@@ -45,14 +45,9 @@ public class PropertiesDocGenerator {
         System.out.println(exposeAsXml());
     }
 
-    static class XmlMap {
-        protected Map<Integer, Map<String, PropertyDefinition<?>>> ordered = new TreeMap<>();
-        protected Map<String, PropertyDefinition<?>> alpha = new TreeMap<>();
-    }
-
     /**
      * Returns a description of the connection properties as an XML document.
-     * 
+     *
      * @return the connection properties as an XML document.
      */
     public static String exposeAsXml() {
@@ -139,5 +134,10 @@ public class PropertiesDocGenerator {
         xmlBuf.append("\n</ConnectionProperties>");
 
         return xmlBuf.toString();
+    }
+
+    static class XmlMap {
+        protected Map<Integer, Map<String, PropertyDefinition<?>>> ordered = new TreeMap<>();
+        protected Map<String, PropertyDefinition<?>> alpha = new TreeMap<>();
     }
 }

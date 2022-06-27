@@ -1213,10 +1213,8 @@ public final class MysqlErrorNumbers {
     public static final String SQL_STATE_XAER_OUTSIDE = "XAE09";
 
     public static final String SQL_STATE_BAD_SSL_PARAMS = "08000";
-
-    private static Map<String, String> sqlStateMessages;
-
     public static Map<Integer, String> mysqlToSql99State;
+    private static Map<String, String> sqlStateMessages;
 
     static {
 
@@ -1489,6 +1487,10 @@ public final class MysqlErrorNumbers {
         mysqlToSql99State.put(MysqlErrorNumbers.ER_LOCK_DEADLOCK, SQL_STATE_ROLLBACK_SERIALIZATION_FAILURE);
     }
 
+    private MysqlErrorNumbers() {
+        // prevent instantiation
+    }
+
     public static String get(String stateCode) {
         return sqlStateMessages.get(stateCode);
     }
@@ -1505,17 +1507,11 @@ public final class MysqlErrorNumbers {
 
     /**
      * Map MySQL error codes to SQL-99 error codes
-     * 
-     * @param errno
-     *            the MySQL error code
-     * 
+     *
+     * @param errno the MySQL error code
      * @return the corresponding SQL-99 error code
      */
     public static String mysqlToSqlState(int errno) {
         return mysqlToSql99(errno);
-    }
-
-    private MysqlErrorNumbers() {
-        // prevent instantiation
     }
 }

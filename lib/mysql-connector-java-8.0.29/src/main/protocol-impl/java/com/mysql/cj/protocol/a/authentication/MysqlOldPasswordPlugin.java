@@ -51,62 +51,6 @@ public class MysqlOldPasswordPlugin implements AuthenticationPlugin<NativePacket
     private MysqlCallbackHandler usernameCallbackHandler = null;
     private String password = null;
 
-    @Override
-    public void init(Protocol<NativePacketPayload> prot, MysqlCallbackHandler cbh) {
-        this.protocol = prot;
-        this.usernameCallbackHandler = cbh;
-    }
-
-    public void destroy() {
-        reset();
-        this.protocol = null;
-        this.usernameCallbackHandler = null;
-        this.password = null;
-    }
-
-    public String getProtocolPluginName() {
-        return PLUGIN_NAME;
-    }
-
-    public boolean requiresConfidentiality() {
-        return false;
-    }
-
-    public boolean isReusable() {
-        return true;
-    }
-
-    public void setAuthenticationParameters(String user, String password) {
-        this.password = password;
-        if (user == null && this.usernameCallbackHandler != null) {
-            // Fall back to system login user.
-            this.usernameCallbackHandler.handle(new UsernameCallback(System.getProperty("user.name")));
-        }
-    }
-
-    @Override
-    public boolean nextAuthenticationStep(NativePacketPayload fromServer, List<NativePacketPayload> toServer) {
-        toServer.clear();
-
-        NativePacketPayload packet = null;
-
-        String pwd = this.password;
-
-        if (fromServer == null || pwd == null || pwd.length() == 0) {
-            packet = new NativePacketPayload(new byte[0]);
-        } else {
-            packet = new NativePacketPayload(StringUtils.getBytes(newCrypt(pwd, fromServer.readString(StringSelfDataType.STRING_TERM, null).substring(0, 8),
-                    this.protocol.getServerSession().getCharsetSettings().getPasswordCharacterEncoding())));
-
-            packet.setPosition(packet.getPayloadLength());
-            packet.writeInteger(IntegerDataType.INT1, 0);
-            packet.setPosition(0);
-        }
-        toServer.add(packet);
-
-        return true;
-    }
-
     // Right from Monty's code
     private static String newCrypt(String password, String seed, String encoding) {
         byte b;
@@ -170,6 +114,62 @@ public class MysqlOldPasswordPlugin implements AuthenticationPlugin<NativePacket
         result[1] = nr2 & 0x7fffffffL;
 
         return result;
+    }
+
+    @Override
+    public void init(Protocol<NativePacketPayload> prot, MysqlCallbackHandler cbh) {
+        this.protocol = prot;
+        this.usernameCallbackHandler = cbh;
+    }
+
+    public void destroy() {
+        reset();
+        this.protocol = null;
+        this.usernameCallbackHandler = null;
+        this.password = null;
+    }
+
+    public String getProtocolPluginName() {
+        return PLUGIN_NAME;
+    }
+
+    public boolean requiresConfidentiality() {
+        return false;
+    }
+
+    public boolean isReusable() {
+        return true;
+    }
+
+    public void setAuthenticationParameters(String user, String password) {
+        this.password = password;
+        if (user == null && this.usernameCallbackHandler != null) {
+            // Fall back to system login user.
+            this.usernameCallbackHandler.handle(new UsernameCallback(System.getProperty("user.name")));
+        }
+    }
+
+    @Override
+    public boolean nextAuthenticationStep(NativePacketPayload fromServer, List<NativePacketPayload> toServer) {
+        toServer.clear();
+
+        NativePacketPayload packet = null;
+
+        String pwd = this.password;
+
+        if (fromServer == null || pwd == null || pwd.length() == 0) {
+            packet = new NativePacketPayload(new byte[0]);
+        } else {
+            packet = new NativePacketPayload(StringUtils.getBytes(newCrypt(pwd, fromServer.readString(StringSelfDataType.STRING_TERM, null).substring(0, 8),
+                    this.protocol.getServerSession().getCharsetSettings().getPasswordCharacterEncoding())));
+
+            packet.setPosition(packet.getPayloadLength());
+            packet.writeInteger(IntegerDataType.INT1, 0);
+            packet.setPosition(0);
+        }
+        toServer.add(packet);
+
+        return true;
     }
 
 }

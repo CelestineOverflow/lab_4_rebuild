@@ -63,22 +63,22 @@ public abstract class AbstractResultsetRows implements ResultsetRows {
     protected ProtocolEntityFactory<ResultsetRow, NativePacketPayload> rowFactory;
 
     @Override
-    public void setOwner(ResultsetRowsOwner rs) {
-        this.owner = rs;
-    }
-
-    @Override
     public ResultsetRowsOwner getOwner() {
         return this.owner;
     }
 
     @Override
-    public void setMetadata(ColumnDefinition columnDefinition) {
-        this.metadata = columnDefinition;
+    public void setOwner(ResultsetRowsOwner rs) {
+        this.owner = rs;
     }
 
     public ColumnDefinition getMetadata() {
         return this.metadata;
+    }
+
+    @Override
+    public void setMetadata(ColumnDefinition columnDefinition) {
+        this.metadata = columnDefinition;
     }
 
     @Override

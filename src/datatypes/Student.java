@@ -18,6 +18,14 @@ public class Student implements dataArray {
         this.programID = programID;
     }
 
+    static public String[][] arrayValues2D(ArrayList<Student> students) {
+        String[][] data2D = new String[students.size()][Student.LABELS.length];
+        for (int i = 0; i < students.size(); i++) {
+            data2D[i] = students.get(i).arrayValues();
+        }
+        return data2D;
+    }
+
     public void printRaw() {
         String spacer = " - ";
         System.out.println(studentID + spacer + firstName + spacer + lastName + spacer + dob + spacer + programID);
@@ -27,12 +35,5 @@ public class Student implements dataArray {
     public String[] arrayValues() {
         String[] data = {studentID, firstName, lastName, dob, programID};
         return data;
-    }
-    static public String[][] arrayValues2D(ArrayList<Student> students) {
-        String[][] data2D = new String[students.size()][Student.LABELS.length];
-        for (int i = 0; i < students.size(); i++) {
-            data2D[i] = students.get(i).arrayValues();
-        }
-        return data2D;
     }
 }

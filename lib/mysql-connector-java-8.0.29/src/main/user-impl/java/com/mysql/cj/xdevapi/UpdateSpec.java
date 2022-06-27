@@ -45,11 +45,9 @@ public class UpdateSpec {
 
     /**
      * Constructor.
-     * 
-     * @param updateType
-     *            update operation type
-     * @param source
-     *            document path expression
+     *
+     * @param updateType update operation type
+     * @param source     document path expression
      */
     public UpdateSpec(UpdateType updateType, String source) {
         this.updateType = UpdateOperation.UpdateType.valueOf(updateType.name());
@@ -62,7 +60,7 @@ public class UpdateSpec {
 
     /**
      * Get X Protocol update type.
-     * 
+     *
      * @return X Protocol UpdateOperation.UpdateType
      */
     public Object getUpdateType() {
@@ -71,7 +69,7 @@ public class UpdateSpec {
 
     /**
      * Get X Protocol ColumnIdentifier.
-     * 
+     *
      * @return X Protocol MysqlxExpr.ColumnIdentifier
      */
     public Object getSource() {
@@ -79,23 +77,22 @@ public class UpdateSpec {
     }
 
     /**
+     * Get X Protocol value expression.
+     *
+     * @return X Protocol MysqlxExpr.Expr
+     */
+    public Object getValue() {
+        return this.value;
+    }
+
+    /**
      * Set value to be set by this update operation.
-     * 
-     * @param value
-     *            value expression
+     *
+     * @param value value expression
      * @return this UpdateSpec
      */
     public UpdateSpec setValue(Object value) {
         this.value = ExprUtil.argObjectToExpr(value, false);
         return this;
-    }
-
-    /**
-     * Get X Protocol value expression.
-     * 
-     * @return X Protocol MysqlxExpr.Expr
-     */
-    public Object getValue() {
-        return this.value;
     }
 }

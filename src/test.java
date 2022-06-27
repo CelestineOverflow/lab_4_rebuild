@@ -1,7 +1,6 @@
 import datatypes.Attempt;
 import datatypes.Professor;
 import datatypes.Student;
-import datatypes.dataArray;
 
 import javax.swing.*;
 import java.awt.event.ActionEvent;
@@ -18,6 +17,7 @@ public class test {
     private GetDataFromDatabase getDataFromDatabase;
     private GeneralTable generalTable;
     private Student studentSelected;
+
     public test() {
         showStudentsButton.addActionListener(new ActionListener() {
             @Override
@@ -34,7 +34,7 @@ public class test {
                 int selectedRow = generalTable.getSelectedRow();
                 System.out.println("Selected Row ");
                 System.out.println(selectedRow);
-                if(selectedRow > 0 && selectedRow <= getDataFromDatabase.getStudents().size()){
+                if (selectedRow > 0 && selectedRow <= getDataFromDatabase.getStudents().size()) {
                     studentSelected = getDataFromDatabase.getStudents().get(selectedRow - 1);
                     String[][] data = Attempt.arrayValues2D(getDataFromDatabase.getAttemptsForStudent(studentSelected));
                     updateTableAsAttempt(data);
@@ -50,8 +50,8 @@ public class test {
                 System.out.println(selectedRow);
                 // TODO: get the professor from the database
 
-                if(selectedRow > 0 && selectedRow <= getDataFromDatabase.getAttemptsForStudent(studentSelected).size()){
-                    Professor professor = getDataFromDatabase.getProfessorFromAttempt(getDataFromDatabase.getAttemptsForStudent(studentSelected).get(selectedRow-1));
+                if (selectedRow > 0 && selectedRow <= getDataFromDatabase.getAttemptsForStudent(studentSelected).size()) {
+                    Professor professor = getDataFromDatabase.getProfessorFromAttempt(getDataFromDatabase.getAttemptsForStudent(studentSelected).get(selectedRow - 1));
                     ArrayList<Professor> professors = new ArrayList<>();
                     professors.add(professor);
                     String[][] data = Professor.arrayValues2D(professors);
@@ -59,6 +59,19 @@ public class test {
                 }
             }
         });
+    }
+
+    public static void main(String[] args) {
+        try {
+            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+        } catch (ClassNotFoundException | InstantiationException | IllegalAccessException | UnsupportedLookAndFeelException e) {
+            e.printStackTrace();
+        }
+        JFrame frame = new JFrame("test");
+        frame.setContentPane(new test().mainPanel);
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        frame.pack();
+        frame.setVisible(true);
     }
 
     private void updateTableAsAttempt(String[][] data) {
@@ -86,19 +99,6 @@ public class test {
         tablePanel.add(generalTable);
         tablePanel.revalidate();
         tablePanel.repaint();
-    }
-
-    public static void main(String[] args) {
-        try {
-            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-        } catch (ClassNotFoundException | InstantiationException | IllegalAccessException | UnsupportedLookAndFeelException e) {
-            e.printStackTrace();
-        }
-        JFrame frame = new JFrame("test");
-        frame.setContentPane(new test().mainPanel);
-        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.pack();
-        frame.setVisible(true);
     }
 
     private void createUIComponents() {

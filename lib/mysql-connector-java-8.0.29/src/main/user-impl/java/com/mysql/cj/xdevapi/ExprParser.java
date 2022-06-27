@@ -76,89 +76,14 @@ import com.mysql.cj.x.protobuf.MysqlxExpr.Operator;
 //
 // Expr: ^
 //
+
 /**
  * Expression parser for X protocol.
  */
 public class ExprParser {
-    /** String being parsed. */
-    String string;
-    /** Token stream produced by lexer. */
-    List<Token> tokens = new ArrayList<>();
-    /** Parser's position in token stream. */
-    int tokenPos = 0;
     /**
-     * Mapping of names to positions for named placeholders. Used for both string values ":arg" and numeric values ":2".
+     * Mapping of reserved words to token types.
      */
-    Map<String, Integer> placeholderNameToPosition = new HashMap<>();
-    /** Number of positional placeholders. */
-    int positionalPlaceholderCount = 0;
-
-    /** Are relational columns identifiers allowed? */
-    private boolean allowRelationalColumns;
-
-    /**
-     * Constructor.
-     * 
-     * @param s
-     *            expression string to parse
-     */
-    public ExprParser(String s) {
-        this(s, true);
-    }
-
-    /**
-     * Constructor.
-     * 
-     * @param s
-     *            expression string to parse
-     * @param allowRelationalColumns
-     *            are relational columns identifiers allowed?
-     */
-    public ExprParser(String s, boolean allowRelationalColumns) {
-        this.string = s;
-        lex();
-        // java.util.stream.IntStream.range(0, this.tokens.size()).forEach(i -> System.err.println("[" + i + "] = " + this.tokens.get(i)));
-        this.allowRelationalColumns = allowRelationalColumns;
-    }
-
-    /**
-     * Token types used by the lexer.
-     */
-    private static enum TokenType {
-        NOT, AND, ANDAND, OR, OROR, XOR, IS, LPAREN, RPAREN, LSQBRACKET, RSQBRACKET, BETWEEN, TRUE, NULL, FALSE, IN, LIKE, INTERVAL, REGEXP, ESCAPE, IDENT,
-        LSTRING, LNUM_INT, LNUM_DOUBLE, DOT, DOLLAR, COMMA, EQ, NE, GT, GE, LT, LE, BITAND, BITOR, BITXOR, LSHIFT, RSHIFT, PLUS, MINUS, STAR, SLASH, HEX, BIN,
-        NEG, BANG, EROTEME, MICROSECOND, SECOND, MINUTE, HOUR, DAY, WEEK, MONTH, QUARTER, YEAR, SECOND_MICROSECOND, MINUTE_MICROSECOND, MINUTE_SECOND,
-        HOUR_MICROSECOND, HOUR_SECOND, HOUR_MINUTE, DAY_MICROSECOND, DAY_SECOND, DAY_MINUTE, DAY_HOUR, YEAR_MONTH, DOUBLESTAR, MOD, COLON, ORDERBY_ASC,
-        ORDERBY_DESC, AS, LCURLY, RCURLY, DOTSTAR, CAST, DECIMAL, UNSIGNED, SIGNED, INTEGER, DATE, TIME, DATETIME, CHAR, BINARY, JSON, COLDOCPATH, OVERLAPS
-    }
-
-    /**
-     * Token. Includes type and string value of the token.
-     */
-    static class Token {
-        TokenType type;
-        String value;
-
-        public Token(TokenType x, char c) {
-            this.type = x;
-            this.value = new String(new char[] { c });
-        }
-
-        public Token(TokenType t, String v) {
-            this.type = t;
-            this.value = v;
-        }
-
-        @Override
-        public String toString() {
-            if (this.type == TokenType.IDENT || this.type == TokenType.LNUM_INT || this.type == TokenType.LNUM_DOUBLE || this.type == TokenType.LSTRING) {
-                return this.type.toString() + "(" + this.value + ")";
-            }
-            return this.type.toString();
-        }
-    }
-
-    /** Mapping of reserved words to token types. */
     static Map<String, TokenType> reservedWords = new HashMap<>();
 
     static {
@@ -217,12 +142,57 @@ public class ExprParser {
     }
 
     /**
+     * String being parsed.
+     */
+    String string;
+    /**
+     * Token stream produced by lexer.
+     */
+    List<Token> tokens = new ArrayList<>();
+    /**
+     * Parser's position in token stream.
+     */
+    int tokenPos = 0;
+    /**
+     * Mapping of names to positions for named placeholders. Used for both string values ":arg" and numeric values ":2".
+     */
+    Map<String, Integer> placeholderNameToPosition = new HashMap<>();
+    /**
+     * Number of positional placeholders.
+     */
+    int positionalPlaceholderCount = 0;
+    /**
+     * Are relational columns identifiers allowed?
+     */
+    private boolean allowRelationalColumns;
+
+    /**
+     * Constructor.
+     *
+     * @param s expression string to parse
+     */
+    public ExprParser(String s) {
+        this(s, true);
+    }
+
+    /**
+     * Constructor.
+     *
+     * @param s                      expression string to parse
+     * @param allowRelationalColumns are relational columns identifiers allowed?
+     */
+    public ExprParser(String s, boolean allowRelationalColumns) {
+        this.string = s;
+        lex();
+        // java.util.stream.IntStream.range(0, this.tokens.size()).forEach(i -> System.err.println("[" + i + "] = " + this.tokens.get(i)));
+        this.allowRelationalColumns = allowRelationalColumns;
+    }
+
+    /**
      * Does the next character equal the given character? (respects bounds)
-     * 
-     * @param i
-     *            The current position in the string
-     * @param c
-     *            character to compare with
+     *
+     * @param i The current position in the string
+     * @param c character to compare with
      * @return true if equals
      */
     boolean nextCharEquals(int i, char c) {
@@ -233,8 +203,7 @@ public class ExprParser {
      * Helper function to match integer or floating point numbers. This function should be called when the position is on the first character of the number (a
      * digit or '.').
      *
-     * @param i
-     *            The current position in the string
+     * @param i The current position in the string
      * @return the next position in the string after the number.
      */
     private int lexNumber(int i) {
@@ -450,11 +419,9 @@ public class ExprParser {
 
     /**
      * Assert that the token at <i>pos</i> is of type <i>type</i>.
-     * 
-     * @param pos
-     *            The current position in the string
-     * @param type
-     *            {@link TokenType}
+     *
+     * @param pos  The current position in the string
+     * @param type {@link TokenType}
      */
     void assertTokenAt(int pos, TokenType type) {
         if (this.tokens.size() <= pos) {
@@ -467,9 +434,8 @@ public class ExprParser {
 
     /**
      * Does the current token have type `t'?
-     * 
-     * @param t
-     *            {@link TokenType}
+     *
+     * @param t {@link TokenType}
      * @return true if equals
      */
     boolean currentTokenTypeEquals(TokenType t) {
@@ -478,9 +444,8 @@ public class ExprParser {
 
     /**
      * Does the next token have type `t'?
-     * 
-     * @param t
-     *            {@link TokenType}
+     *
+     * @param t {@link TokenType}
      * @return true if equals
      */
     boolean nextTokenTypeEquals(TokenType t) {
@@ -489,11 +454,9 @@ public class ExprParser {
 
     /**
      * Does the token at position `pos' have type `t'?
-     * 
-     * @param pos
-     *            The current position in the string
-     * @param t
-     *            {@link TokenType}
+     *
+     * @param pos The current position in the string
+     * @param t   {@link TokenType}
      * @return true if equals
      */
     boolean posTokenTypeEquals(int pos, TokenType t) {
@@ -503,8 +466,7 @@ public class ExprParser {
     /**
      * Consume token.
      *
-     * @param t
-     *            {@link TokenType}
+     * @param t {@link TokenType}
      * @return the string value of the consumed token
      */
     String consumeToken(TokenType t) {
@@ -553,7 +515,7 @@ public class ExprParser {
 
     /**
      * Parse an identifier for a function call: [schema.]name
-     * 
+     *
      * @return {@link Identifier}
      */
     Identifier identifier() {
@@ -572,7 +534,7 @@ public class ExprParser {
 
     /**
      * Parse a document path member.
-     * 
+     *
      * @return {@link DocumentPathItem}
      */
     DocumentPathItem docPathMember() {
@@ -600,7 +562,7 @@ public class ExprParser {
 
     /**
      * Parse a document path array index.
-     * 
+     *
      * @return {@link DocumentPathItem}
      */
     DocumentPathItem docPathArrayLoc() {
@@ -625,7 +587,7 @@ public class ExprParser {
 
     /**
      * Parse a JSON-style document path, like WL#7909, but prefix by @. instead of $.
-     * 
+     *
      * @return list of {@link DocumentPathItem} objects
      */
     public List<DocumentPathItem> documentPath() {
@@ -653,7 +615,7 @@ public class ExprParser {
 
     /**
      * Parse a document field.
-     * 
+     *
      * @return {@link Expr}
      */
     public Expr documentField() {
@@ -667,7 +629,7 @@ public class ExprParser {
 
     /**
      * Parse a column identifier (which may optionally include a JSON document path).
-     * 
+     *
      * @return {@link Expr}
      */
     Expr columnIdentifier() {
@@ -717,11 +679,9 @@ public class ExprParser {
 
     /**
      * Build a unary operator expression.
-     * 
-     * @param name
-     *            operator name
-     * @param param
-     *            operator parameter
+     *
+     * @param name  operator name
+     * @param param operator parameter
      * @return {@link Expr}
      */
     Expr buildUnaryOp(String name, Expr param) {
@@ -732,7 +692,7 @@ public class ExprParser {
 
     /**
      * Parse an atomic expression. (c.f. grammar at top)
-     * 
+     *
      * @return {@link Expr}
      */
     Expr atomicExpr() { // constant, identifier, variable, function call, etc
@@ -884,20 +844,10 @@ public class ExprParser {
     }
 
     /**
-     * An expression parser. (used in {@link #parseLeftAssocBinaryOpExpr(TokenType[], ParseExpr)})
-     */
-    @FunctionalInterface
-    static interface ParseExpr {
-        Expr parseExpr();
-    }
-
-    /**
      * Parse a left-associated binary operator.
      *
-     * @param types
-     *            The token types that denote this operator.
-     * @param innerParser
-     *            The inner parser that should be called to parse operands.
+     * @param types       The token types that denote this operator.
+     * @param innerParser The inner parser that should be called to parse operands.
      * @return an expression tree of the binary operator or a single operand
      */
     Expr parseLeftAssocBinaryOpExpr(TokenType[] types, ParseExpr innerParser) {
@@ -953,30 +903,30 @@ public class ExprParser {
     }
 
     Expr mulDivExpr() {
-        return parseLeftAssocBinaryOpExpr(new TokenType[] { TokenType.STAR, TokenType.SLASH, TokenType.MOD }, this::addSubIntervalExpr);
+        return parseLeftAssocBinaryOpExpr(new TokenType[]{TokenType.STAR, TokenType.SLASH, TokenType.MOD}, this::addSubIntervalExpr);
     }
 
     Expr addSubExpr() {
-        return parseLeftAssocBinaryOpExpr(new TokenType[] { TokenType.PLUS, TokenType.MINUS }, this::mulDivExpr);
+        return parseLeftAssocBinaryOpExpr(new TokenType[]{TokenType.PLUS, TokenType.MINUS}, this::mulDivExpr);
     }
 
     Expr shiftExpr() {
-        return parseLeftAssocBinaryOpExpr(new TokenType[] { TokenType.LSHIFT, TokenType.RSHIFT }, this::addSubExpr);
+        return parseLeftAssocBinaryOpExpr(new TokenType[]{TokenType.LSHIFT, TokenType.RSHIFT}, this::addSubExpr);
     }
 
     Expr bitExpr() {
-        return parseLeftAssocBinaryOpExpr(new TokenType[] { TokenType.BITAND, TokenType.BITOR, TokenType.BITXOR }, this::shiftExpr);
+        return parseLeftAssocBinaryOpExpr(new TokenType[]{TokenType.BITAND, TokenType.BITOR, TokenType.BITXOR}, this::shiftExpr);
     }
 
     Expr compExpr() {
-        return parseLeftAssocBinaryOpExpr(new TokenType[] { TokenType.GE, TokenType.GT, TokenType.LE, TokenType.LT, TokenType.EQ, TokenType.NE },
+        return parseLeftAssocBinaryOpExpr(new TokenType[]{TokenType.GE, TokenType.GT, TokenType.LE, TokenType.LT, TokenType.EQ, TokenType.NE},
                 this::bitExpr);
     }
 
     Expr ilriExpr() {
         Expr lhs = compExpr();
         List<TokenType> expected = Arrays
-                .asList(new TokenType[] { TokenType.IS, TokenType.IN, TokenType.LIKE, TokenType.BETWEEN, TokenType.REGEXP, TokenType.NOT, TokenType.OVERLAPS });
+                .asList(new TokenType[]{TokenType.IS, TokenType.IN, TokenType.LIKE, TokenType.BETWEEN, TokenType.REGEXP, TokenType.NOT, TokenType.OVERLAPS});
         while (this.tokenPos < this.tokens.size() && expected.contains(this.tokens.get(this.tokenPos).type)) {
             boolean isNot = false;
             if (currentTokenTypeEquals(TokenType.NOT)) {
@@ -1043,11 +993,11 @@ public class ExprParser {
     }
 
     Expr andExpr() {
-        return parseLeftAssocBinaryOpExpr(new TokenType[] { TokenType.AND, TokenType.ANDAND }, this::ilriExpr);
+        return parseLeftAssocBinaryOpExpr(new TokenType[]{TokenType.AND, TokenType.ANDAND}, this::ilriExpr);
     }
 
     Expr orExpr() {
-        return parseLeftAssocBinaryOpExpr(new TokenType[] { TokenType.OR, TokenType.OROR }, this::andExpr);
+        return parseLeftAssocBinaryOpExpr(new TokenType[]{TokenType.OR, TokenType.OROR}, this::andExpr);
     }
 
     Expr expr() {
@@ -1075,10 +1025,8 @@ public class ExprParser {
     /**
      * Utility method to wrap a parser of a list of elements separated by comma.
      *
-     * @param <T>
-     *            the type of element to be parsed
-     * @param elementParser
-     *            the single element parser
+     * @param <T>           the type of element to be parsed
+     * @param elementParser the single element parser
      * @return a list of elements parsed
      */
     private <T> List<T> parseCommaSeparatedList(Supplier<T> elementParser) {
@@ -1097,7 +1045,7 @@ public class ExprParser {
 
     /**
      * Parse an ORDER BY specification which is a comma-separated list of expressions, each may be optionally suffixed by ASC/DESC.
-     * 
+     *
      * @return list of {@link Order} objects
      */
     public List<Order> parseOrderSpec() {
@@ -1117,7 +1065,7 @@ public class ExprParser {
 
     /**
      * Parse a SELECT projection which is a comma-separated list of expressions, each optionally suffixed with a target alias.
-     * 
+     *
      * @return list of {@link Projection} objects
      */
     public List<Projection> parseTableSelectProjection() {
@@ -1134,7 +1082,7 @@ public class ExprParser {
 
     /**
      * Parse an INSERT field name.
-     * 
+     *
      * @return {@link Column}
      */
     // TODO unit test
@@ -1144,7 +1092,7 @@ public class ExprParser {
 
     /**
      * Parse an UPDATE field which can include can document paths.
-     * 
+     *
      * @return {@link ColumnIdentifier}
      */
     public ColumnIdentifier parseTableUpdateField() {
@@ -1153,7 +1101,7 @@ public class ExprParser {
 
     /**
      * Parse a document projection which is similar to SELECT but with document paths as the target alias.
-     * 
+     *
      * @return list of {@link Projection} objects
      */
     public List<Projection> parseDocumentProjection() {
@@ -1170,7 +1118,7 @@ public class ExprParser {
 
     /**
      * Parse a list of expressions used for GROUP BY.
-     * 
+     *
      * @return list of {@link Expr} objects
      */
     public List<Expr> parseExprList() {
@@ -1179,7 +1127,7 @@ public class ExprParser {
 
     /**
      * Return the number of positional placeholders in the expression.
-     * 
+     *
      * @return the number of positional placeholders in the expression
      */
     public int getPositionalPlaceholderCount() {
@@ -1188,10 +1136,55 @@ public class ExprParser {
 
     /**
      * Get a mapping of parameter names to positions.
-     * 
+     *
      * @return a mapping of parameter names to positions.
      */
     public Map<String, Integer> getPlaceholderNameToPositionMap() {
         return Collections.unmodifiableMap(this.placeholderNameToPosition);
+    }
+
+    /**
+     * Token types used by the lexer.
+     */
+    private static enum TokenType {
+        NOT, AND, ANDAND, OR, OROR, XOR, IS, LPAREN, RPAREN, LSQBRACKET, RSQBRACKET, BETWEEN, TRUE, NULL, FALSE, IN, LIKE, INTERVAL, REGEXP, ESCAPE, IDENT,
+        LSTRING, LNUM_INT, LNUM_DOUBLE, DOT, DOLLAR, COMMA, EQ, NE, GT, GE, LT, LE, BITAND, BITOR, BITXOR, LSHIFT, RSHIFT, PLUS, MINUS, STAR, SLASH, HEX, BIN,
+        NEG, BANG, EROTEME, MICROSECOND, SECOND, MINUTE, HOUR, DAY, WEEK, MONTH, QUARTER, YEAR, SECOND_MICROSECOND, MINUTE_MICROSECOND, MINUTE_SECOND,
+        HOUR_MICROSECOND, HOUR_SECOND, HOUR_MINUTE, DAY_MICROSECOND, DAY_SECOND, DAY_MINUTE, DAY_HOUR, YEAR_MONTH, DOUBLESTAR, MOD, COLON, ORDERBY_ASC,
+        ORDERBY_DESC, AS, LCURLY, RCURLY, DOTSTAR, CAST, DECIMAL, UNSIGNED, SIGNED, INTEGER, DATE, TIME, DATETIME, CHAR, BINARY, JSON, COLDOCPATH, OVERLAPS
+    }
+
+    /**
+     * An expression parser. (used in {@link #parseLeftAssocBinaryOpExpr(TokenType[], ParseExpr)})
+     */
+    @FunctionalInterface
+    static interface ParseExpr {
+        Expr parseExpr();
+    }
+
+    /**
+     * Token. Includes type and string value of the token.
+     */
+    static class Token {
+        TokenType type;
+        String value;
+
+        public Token(TokenType x, char c) {
+            this.type = x;
+            this.value = new String(new char[]{c});
+        }
+
+        public Token(TokenType t, String v) {
+            this.type = t;
+            this.value = v;
+        }
+
+        @Override
+        public String toString() {
+            if (this.type == TokenType.IDENT || this.type == TokenType.LNUM_INT || this.type == TokenType.LNUM_DOUBLE || this.type == TokenType.LSTRING) {
+                return this.type.toString() + "(" + this.value + ")";
+            }
+            return this.type.toString();
+        }
     }
 }

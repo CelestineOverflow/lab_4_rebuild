@@ -119,22 +119,21 @@ import com.mysql.cj.xdevapi.PreparableStatement.PreparableStatementFinalizer;
  */
 public class XProtocol extends AbstractProtocol<XMessage> implements Protocol<XMessage> {
     private static int RETRY_PREPARE_STATEMENT_COUNTDOWN = 100;
-
-    private MessageReader<XMessageHeader, XMessage> reader;
-    private MessageSender<XMessage> sender;
-    /** We take responsibility of the socket as the managed resource. We close it when we're done. */
-    private Closeable managedResource;
-
-    private ResultStreamer currentResultStreamer;
-
+    public String defaultSchemaName;
     XServerSession serverSession = null;
     Boolean useSessionResetKeepOpen = null;
-
-    public String defaultSchemaName;
-
+    private MessageReader<XMessageHeader, XMessage> reader;
+    private MessageSender<XMessage> sender;
+    /**
+     * We take responsibility of the socket as the managed resource. We close it when we're done.
+     */
+    private Closeable managedResource;
+    private ResultStreamer currentResultStreamer;
     private Map<String, Object> clientCapabilities = new HashMap<>();
 
-    /** Keeps track of whether this X Server session supports prepared statements. True by default until first failure of a statement prepare. */
+    /**
+     * Keeps track of whether this X Server session supports prepared statements. True by default until first failure of a statement prepare.
+     */
     private boolean supportsPreparedStatements = true;
     private int retryPrepareStatementCountdown = 0;
     private SequentialIdLease preparedStatementIds = new SequentialIdLease();
@@ -145,6 +144,7 @@ public class XProtocol extends AbstractProtocol<XMessage> implements Protocol<XM
     private CompressionAlgorithm compressionAlgorithm;
 
     private Map<Class<? extends GeneratedMessageV3>, ProtocolEntityFactory<? extends ProtocolEntity, XMessage>> messageToProtocolEntityFactory = new HashMap<>();
+    private String currUser = null, currPassword = null, currDatabase = null; // TODO remove these variables after implementing mysql_reset_connection() in reset() method
 
     public XProtocol(HostInfo hostInfo, PropertySet propertySet) {
         String host = hostInfo.getHost();
@@ -198,9 +198,8 @@ public class XProtocol extends AbstractProtocol<XMessage> implements Protocol<XM
 
     /**
      * Set client capabilities of current session. Must be done before authentication ({@link #changeUser(String, String, String)}).
-     * 
-     * @param keyValuePair
-     *            capabilities name/value map
+     *
+     * @param keyValuePair capabilities name/value map
      */
     public void sendCapabilities(Map<String, Object> keyValuePair) {
         keyValuePair.forEach((k, v) -> ((XServerCapabilities) getServerSession().getCapabilities()).setCapability(k, v));
@@ -422,7 +421,7 @@ public class XProtocol extends AbstractProtocol<XMessage> implements Protocol<XM
                         throw ExceptionFactory.createException(WrongArgumentException.class, Messages.getString("Protocol.WrongAttributeName"));
                     } else if (attMap.put(key, value) != null) {
                         throw ExceptionFactory.createException(WrongArgumentException.class,
-                                Messages.getString("Protocol.DuplicateAttribute", new Object[] { key }));
+                                Messages.getString("Protocol.DuplicateAttribute", new Object[]{key}));
                     }
                 }
             }
@@ -441,12 +440,10 @@ public class XProtocol extends AbstractProtocol<XMessage> implements Protocol<XM
     /**
      * Parses and validates the value given for the connection option 'xdevapi.compression-extensions'. With the information obtained, creates a map of
      * supported compression algorithms.
-     * 
-     * @param compressionExtensions
-     *            the value of the option 'xdevapi.compression-algorithm' containing a comma separated list of triplets with the format
-     *            "algorithm-name:inflater-InputStream-class-name:deflater-OutputStream-class-name".
-     * @return
-     *         a map with all the supported compression algorithms, both natively supported and user configured.
+     *
+     * @param compressionExtensions the value of the option 'xdevapi.compression-algorithm' containing a comma separated list of triplets with the format
+     *                              "algorithm-name:inflater-InputStream-class-name:deflater-OutputStream-class-name".
+     * @return a map with all the supported compression algorithms, both natively supported and user configured.
      */
     private Map<String, CompressionAlgorithm> getCompressionExtensions(String compressionExtensions) {
         Map<String, CompressionAlgorithm> compressionExtensionsMap = CompressionAlgorithm.getDefaultInstances();
@@ -469,8 +466,6 @@ public class XProtocol extends AbstractProtocol<XMessage> implements Protocol<XM
         }
         return compressionExtensionsMap;
     }
-
-    private String currUser = null, currPassword = null, currDatabase = null; // TODO remove these variables after implementing mysql_reset_connection() in reset() method
 
     @Override
     public void connect(String user, String password, String database) {
@@ -615,7 +610,7 @@ public class XProtocol extends AbstractProtocol<XMessage> implements Protocol<XM
 
     /**
      * Used only in tests
-     * 
+     *
      * @return true if there are result rows
      */
     public boolean hasResults() {
@@ -664,7 +659,7 @@ public class XProtocol extends AbstractProtocol<XMessage> implements Protocol<XM
                     .get(ColumnMetaData.class);
             fromServer.forEach(col -> metadata.add(fieldFactory.createFromMessage(new XMessage(col))));
 
-            return new DefaultColumnDefinition(metadata.toArray(new Field[] {}));
+            return new DefaultColumnDefinition(metadata.toArray(new Field[]{}));
         } catch (IOException e) {
             throw new XProtocolError(e.getMessage(), e);
         }
@@ -688,7 +683,7 @@ public class XProtocol extends AbstractProtocol<XMessage> implements Protocol<XM
                     .get(ColumnMetaData.class);
             fromServer.forEach(col -> metadata.add(fieldFactory.createFromMessage(new XMessage(col))));
 
-            return new DefaultColumnDefinition(metadata.toArray(new Field[] {}));
+            return new DefaultColumnDefinition(metadata.toArray(new Field[]{}));
         } catch (IOException e) {
             throw new XProtocolError(e.getMessage(), e);
         }
@@ -718,9 +713,8 @@ public class XProtocol extends AbstractProtocol<XMessage> implements Protocol<XM
 
     /**
      * Checks if the MySQL server currently connected supports prepared statements.
-     * 
-     * @return
-     *         {@code true} if the MySQL server currently connected supports prepared statements.
+     *
+     * @return {@code true} if the MySQL server currently connected supports prepared statements.
      */
     public boolean supportsPreparedStatements() {
         return this.supportsPreparedStatements;
@@ -728,9 +722,8 @@ public class XProtocol extends AbstractProtocol<XMessage> implements Protocol<XM
 
     /**
      * Checks if enough statements have been executed in this MySQL server so that another prepare statement attempt should be done.
-     * 
-     * @return
-     *         {@code true} if enough executions have been done since last time a prepared statement failed to prepare
+     *
+     * @return {@code true} if enough executions have been done since last time a prepared statement failed to prepare
      */
     public boolean readyForPreparingStatements() {
         if (this.retryPrepareStatementCountdown == 0) {
@@ -743,10 +736,8 @@ public class XProtocol extends AbstractProtocol<XMessage> implements Protocol<XM
     /**
      * Returns an id to be used as a client-managed prepared statement id. The method {@link #freePreparedStatementId(int)} must be called when the prepared
      * statement is deallocated so that the same id can be re-used.
-     * 
-     * @param preparableStatement
-     *            {@link PreparableStatement}
-     * 
+     *
+     * @param preparableStatement {@link PreparableStatement}
      * @return a new identifier to be used as prepared statement id
      */
     public int getNewPreparedStatementId(PreparableStatement<?> preparableStatement) {
@@ -762,9 +753,8 @@ public class XProtocol extends AbstractProtocol<XMessage> implements Protocol<XM
     /**
      * Frees a prepared statement id so that it can be reused. Note that freeing an id from an active prepared statement will result in a statement prepare
      * conflict next time one gets prepared with the same released id.
-     * 
-     * @param preparedStatementId
-     *            the prepared statement id to release
+     *
+     * @param preparedStatementId the prepared statement id to release
      */
     public void freePreparedStatementId(int preparedStatementId) {
         if (!this.supportsPreparedStatements) {
@@ -776,13 +766,10 @@ public class XProtocol extends AbstractProtocol<XMessage> implements Protocol<XM
 
     /**
      * Informs this protocol instance that preparing a statement on the connected server failed.
-     * 
-     * @param preparedStatementId
-     *            the id of the prepared statement that failed to prepare
-     * @param e
-     *            {@link XProtocolError}
-     * @return
-     *         {@code true} if the exception was properly handled
+     *
+     * @param preparedStatementId the id of the prepared statement that failed to prepare
+     * @param e                   {@link XProtocolError}
+     * @return {@code true} if the exception was properly handled
      */
     public boolean failedPreparingStatement(int preparedStatementId, XProtocolError e) {
         freePreparedStatementId(preparedStatementId);
@@ -910,7 +897,7 @@ public class XProtocol extends AbstractProtocol<XMessage> implements Protocol<XM
      * Get the capabilities from the server.
      * <p>
      * <b>NOTE:</b> This must be called before authentication.
-     * 
+     *
      * @return capabilities mapped by name
      */
     public ServerCapabilities readServerCapabilities() {
@@ -1007,17 +994,17 @@ public class XProtocol extends AbstractProtocol<XMessage> implements Protocol<XM
 
     @Override
     public <T extends ProtocolEntity> T read(Class<Resultset> requiredClass, int maxRows, boolean streamResults, XMessage resultPacket, boolean isBinaryEncoded,
-            ColumnDefinition metadata, ProtocolEntityFactory<T, XMessage> protocolEntityFactory) throws IOException {
-        throw ExceptionFactory.createException(CJOperationNotSupportedException.class, "Not supported");
-    }
-
-    @Override
-    public void setLocalInfileInputStream(InputStream stream) {
+                                             ColumnDefinition metadata, ProtocolEntityFactory<T, XMessage> protocolEntityFactory) throws IOException {
         throw ExceptionFactory.createException(CJOperationNotSupportedException.class, "Not supported");
     }
 
     @Override
     public InputStream getLocalInfileInputStream() {
+        throw ExceptionFactory.createException(CJOperationNotSupportedException.class, "Not supported");
+    }
+
+    @Override
+    public void setLocalInfileInputStream(InputStream stream) {
         throw ExceptionFactory.createException(CJOperationNotSupportedException.class, "Not supported");
     }
 

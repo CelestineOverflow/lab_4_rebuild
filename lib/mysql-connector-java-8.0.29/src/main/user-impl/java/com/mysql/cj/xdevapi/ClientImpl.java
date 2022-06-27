@@ -63,23 +63,17 @@ import com.mysql.cj.util.StringUtils;
 
 public class ClientImpl implements Client, ProtocolEventListener {
     boolean isClosed = false;
-
-    private ConnectionUrl connUrl = null;
-
-    private boolean poolingEnabled = true;
-    private int maxSize = 25;
     int maxIdleTime = 0;
-    private int queueTimeout = 0;
-
-    private int demotedTimeout = 120_000;
     Map<HostInfo, Long> demotedHosts = null;
-
     BlockingQueue<PooledXProtocol> idleProtocols = null;
     Set<WeakReference<PooledXProtocol>> activeProtocols = null;
-
     Set<WeakReference<Session>> nonPooledSessions = null;
-
     SessionFactory sessionFactory = new SessionFactory();
+    private ConnectionUrl connUrl = null;
+    private boolean poolingEnabled = true;
+    private int maxSize = 25;
+    private int queueTimeout = 0;
+    private int demotedTimeout = 120_000;
 
     public ClientImpl(String url, String clientPropsJson) {
         Properties clientProps = StringUtils.isNullOrEmpty(clientPropsJson) ? new Properties() : clientPropsFromJson(clientPropsJson);
@@ -422,43 +416,6 @@ public class ClientImpl implements Client, ProtocolEventListener {
         }
     }
 
-    public class PooledXProtocol extends XProtocol {
-        long idleSince = -1;
-        HostInfo hostInfo = null;
-
-        public PooledXProtocol(HostInfo hostInfo, PropertySet propertySet) {
-            super(hostInfo, propertySet);
-            this.hostInfo = hostInfo;
-        }
-
-        @Override
-        public void close() {
-            reset();
-            this.idleSince = System.currentTimeMillis();
-            idleProtocol(this);
-        }
-
-        public HostInfo getHostInfo() {
-            return this.hostInfo;
-        }
-
-        boolean isIdleTimeoutReached() {
-            return ClientImpl.this.maxIdleTime > 0 && this.idleSince > 0 && System.currentTimeMillis() > this.idleSince + ClientImpl.this.maxIdleTime;
-        }
-
-        boolean isHostInfoValid(List<HostInfo> hostsList) {
-            return hostsList.stream().filter(h -> h.equalHostPortPair(this.hostInfo)).findFirst().isPresent();
-        }
-
-        void realClose() {
-            try {
-                super.close();
-            } catch (IOException e) {
-                // TODO is it really no-op?
-            }
-        }
-    }
-
     @Override
     public void handleEvent(EventType type, Object info, Throwable reason) {
         switch (type) {
@@ -499,5 +456,42 @@ public class ClientImpl implements Client, ProtocolEventListener {
         }
         this.activeProtocols.remove(wprot);
         prot.realClose();
+    }
+
+    public class PooledXProtocol extends XProtocol {
+        long idleSince = -1;
+        HostInfo hostInfo = null;
+
+        public PooledXProtocol(HostInfo hostInfo, PropertySet propertySet) {
+            super(hostInfo, propertySet);
+            this.hostInfo = hostInfo;
+        }
+
+        @Override
+        public void close() {
+            reset();
+            this.idleSince = System.currentTimeMillis();
+            idleProtocol(this);
+        }
+
+        public HostInfo getHostInfo() {
+            return this.hostInfo;
+        }
+
+        boolean isIdleTimeoutReached() {
+            return ClientImpl.this.maxIdleTime > 0 && this.idleSince > 0 && System.currentTimeMillis() > this.idleSince + ClientImpl.this.maxIdleTime;
+        }
+
+        boolean isHostInfoValid(List<HostInfo> hostsList) {
+            return hostsList.stream().filter(h -> h.equalHostPortPair(this.hostInfo)).findFirst().isPresent();
+        }
+
+        void realClose() {
+            try {
+                super.close();
+            } catch (IOException e) {
+                // TODO is it really no-op?
+            }
+        }
     }
 }

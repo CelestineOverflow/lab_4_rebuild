@@ -51,33 +51,28 @@ public abstract class AbstractFilterParams implements FilterParams {
     protected Long offset;
     protected boolean supportsOffset;
     protected String[] orderExpr;
-    private List<Order> order;
     protected String criteriaStr;
-    private Expr criteria;
     protected Scalar[] args;
-    private Map<String, Integer> placeholderNameToPosition;
     protected boolean isRelational;
-
     protected String[] groupBy;
-    private List<Expr> grouping;
-    String having;
-    private Expr groupingCriteria;
     protected String[] projection;
     protected List<Projection> fields;
     protected RowLock lock;
     protected RowLockOptions lockOption;
+    String having;
+    private List<Order> order;
+    private Expr criteria;
+    private Map<String, Integer> placeholderNameToPosition;
+    private List<Expr> grouping;
+    private Expr groupingCriteria;
 
     /**
      * Constructor.
-     * 
-     * @param schemaName
-     *            Schema name
-     * @param collectionName
-     *            Collection name
-     * @param supportsOffset
-     *            Whether <i>offset</i> is supported or not
-     * @param isRelational
-     *            Are relational columns identifiers allowed?
+     *
+     * @param schemaName     Schema name
+     * @param collectionName Collection name
+     * @param supportsOffset Whether <i>offset</i> is supported or not
+     * @param isRelational   Are relational columns identifiers allowed?
      */
     public AbstractFilterParams(String schemaName, String collectionName, boolean supportsOffset, boolean isRelational) {
         this.collection = ExprUtil.buildCollection(schemaName, collectionName);
@@ -174,10 +169,14 @@ public abstract class AbstractFilterParams implements FilterParams {
         return this.isRelational;
     }
 
-    public abstract void setFields(String... projection);
-
     public Object getFields() {
         return this.fields;
+    }
+
+    public abstract void setFields(String... projection);
+
+    public Object getGrouping() {
+        return this.grouping;
     }
 
     public void setGrouping(String... groupBy) {
@@ -185,17 +184,13 @@ public abstract class AbstractFilterParams implements FilterParams {
         this.grouping = new ExprParser(Arrays.stream(groupBy).collect(Collectors.joining(", ")), isRelational()).parseExprList();
     }
 
-    public Object getGrouping() {
-        return this.grouping;
+    public Object getGroupingCriteria() {
+        return this.groupingCriteria;
     }
 
     public void setGroupingCriteria(String having) {
         this.having = having;
         this.groupingCriteria = new ExprParser(having, isRelational()).parse();
-    }
-
-    public Object getGroupingCriteria() {
-        return this.groupingCriteria;
     }
 
     public RowLock getLock() {

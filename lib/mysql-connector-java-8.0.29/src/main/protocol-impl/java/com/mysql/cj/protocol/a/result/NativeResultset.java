@@ -40,21 +40,31 @@ import com.mysql.cj.result.Row;
 
 public class NativeResultset implements Resultset {
 
-    /** The metadata for this result set */
+    /**
+     * The metadata for this result set
+     */
     protected ColumnDefinition columnDefinition;
 
-    /** The actual rows */
+    /**
+     * The actual rows
+     */
     protected ResultsetRows rowData;
 
     protected Resultset nextResultset = null;
 
-    /** The id (used when profiling) to identify us */
+    /**
+     * The id (used when profiling) to identify us
+     */
     protected int resultId;
 
-    /** How many rows were affected by UPDATE/INSERT/DELETE? */
+    /**
+     * How many rows were affected by UPDATE/INSERT/DELETE?
+     */
     protected long updateCount;
 
-    /** Value generated for AUTO_INCREMENT columns */
+    /**
+     * Value generated for AUTO_INCREMENT columns
+     */
     protected long updateId = -1;
 
     /**
@@ -62,7 +72,9 @@ public class NativeResultset implements Resultset {
      */
     protected String serverInfo = null;
 
-    /** Pointer to current row data */
+    /**
+     * Pointer to current row data
+     */
     protected Row thisRow = null; // Values for current row
 
     public NativeResultset() {
@@ -70,9 +82,8 @@ public class NativeResultset implements Resultset {
 
     /**
      * Create a result set for an executeUpdate statement.
-     * 
-     * @param ok
-     *            {@link OkPacket}
+     *
+     * @param ok {@link OkPacket}
      */
     public NativeResultset(OkPacket ok) {
         this.updateCount = ok.getUpdateCount();
@@ -101,13 +112,13 @@ public class NativeResultset implements Resultset {
     }
 
     @Override
-    public void setColumnDefinition(ColumnDefinition metadata) {
-        this.columnDefinition = metadata;
+    public ColumnDefinition getColumnDefinition() {
+        return this.columnDefinition;
     }
 
     @Override
-    public ColumnDefinition getColumnDefinition() {
-        return this.columnDefinition;
+    public void setColumnDefinition(ColumnDefinition metadata) {
+        this.columnDefinition = metadata;
     }
 
     public boolean hasRows() {
@@ -126,16 +137,16 @@ public class NativeResultset implements Resultset {
         this.columnDefinition.setColumnToIndexCache(new HashMap<String, Integer>());
     }
 
-    public synchronized void setNextResultset(Resultset nextResultset) {
-        this.nextResultset = nextResultset;
-    }
-
     /**
      * @return the nextResultSet, if any, null if none exists.
      */
     public synchronized Resultset getNextResultset() {
         // read next RS from streamer ?
         return this.nextResultset;
+    }
+
+    public synchronized void setNextResultset(Resultset nextResultset) {
+        this.nextResultset = nextResultset;
     }
 
     /**

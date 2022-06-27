@@ -43,6 +43,11 @@ public class NativeServerSessionStateController implements ServerSessionStateCon
     private List<WeakReference<SessionStateChangesListener>> listeners;
 
     @Override
+    public NativeServerSessionStateChanges getSessionStateChanges() {
+        return this.sessionStateChanges;
+    }
+
+    @Override
     public void setSessionStateChanges(ServerSessionStateChanges changes) {
         this.sessionStateChanges = (NativeServerSessionStateChanges) changes;
         if (this.listeners != null) {
@@ -55,11 +60,6 @@ public class NativeServerSessionStateController implements ServerSessionStateCon
                 }
             }
         }
-    }
-
-    @Override
-    public NativeServerSessionStateChanges getSessionStateChanges() {
-        return this.sessionStateChanges;
     }
 
     @Override
@@ -91,12 +91,12 @@ public class NativeServerSessionStateController implements ServerSessionStateCon
     public static class NativeServerSessionStateChanges implements ServerSessionStateChanges {
         private List<SessionStateChange> sessionStateChanges = new ArrayList<>();
 
+        public NativeServerSessionStateChanges() {
+        }
+
         @Override
         public List<SessionStateChange> getSessionStateChangesList() {
             return this.sessionStateChanges;
-        }
-
-        public NativeServerSessionStateChanges() {
         }
 
         public NativeServerSessionStateChanges init(NativePacketPayload buf, String encoding) {

@@ -64,10 +64,10 @@ import com.mysql.cj.protocol.ServerSessionStateController;
 /**
  * This class serves as a wrapper for the connection object. It is returned to the application server which may wrap it again and then return it to the
  * application client in response to dataSource.getConnection().
- * 
+ * <p>
  * All method invocations are forwarded to underlying connection unless the close method was previously called, in which case a SQLException is thrown. The
  * close method performs a 'logical close' on the connection.
- * 
+ * <p>
  * All SQL exceptions thrown by the physical connection are intercepted and sent to connectionEvent listeners before being thrown to client.
  */
 public class ConnectionWrapper extends WrapperBase implements JdbcConnection {
@@ -79,23 +79,13 @@ public class ConnectionWrapper extends WrapperBase implements JdbcConnection {
 
     private boolean isForXa;
 
-    protected static ConnectionWrapper getInstance(MysqlPooledConnection mysqlPooledConnection, JdbcConnection mysqlConnection, boolean forXa)
-            throws SQLException {
-        return new ConnectionWrapper(mysqlPooledConnection, mysqlConnection, forXa);
-    }
-
     /**
      * Construct a new LogicalHandle and set instance variables
-     * 
-     * @param mysqlPooledConnection
-     *            reference to object that instantiated this object
-     * @param mysqlConnection
-     *            physical connection to db
-     * @param forXa
-     *            is it for XA connection?
-     * 
-     * @throws SQLException
-     *             if an error occurs.
+     *
+     * @param mysqlPooledConnection reference to object that instantiated this object
+     * @param mysqlConnection       physical connection to db
+     * @param forXa                 is it for XA connection?
+     * @throws SQLException if an error occurs.
      */
     public ConnectionWrapper(MysqlPooledConnection mysqlPooledConnection, JdbcConnection mysqlConnection, boolean forXa) throws SQLException {
         super(mysqlPooledConnection);
@@ -107,6 +97,23 @@ public class ConnectionWrapper extends WrapperBase implements JdbcConnection {
         if (this.isForXa) {
             setInGlobalTx(false);
         }
+    }
+
+    protected static ConnectionWrapper getInstance(MysqlPooledConnection mysqlPooledConnection, JdbcConnection mysqlConnection, boolean forXa)
+            throws SQLException {
+        return new ConnectionWrapper(mysqlPooledConnection, mysqlConnection, forXa);
+    }
+
+    @Override
+    public boolean getAutoCommit() throws SQLException {
+
+        try {
+            return this.mc.getAutoCommit();
+        } catch (SQLException sqlException) {
+            checkAndFireConnectionError(sqlException);
+        }
+
+        return false; // we don't reach this code, compiler can't tell
     }
 
     @Override
@@ -125,27 +132,6 @@ public class ConnectionWrapper extends WrapperBase implements JdbcConnection {
     }
 
     @Override
-    public boolean getAutoCommit() throws SQLException {
-
-        try {
-            return this.mc.getAutoCommit();
-        } catch (SQLException sqlException) {
-            checkAndFireConnectionError(sqlException);
-        }
-
-        return false; // we don't reach this code, compiler can't tell
-    }
-
-    @Override
-    public void setDatabase(String dbName) throws SQLException {
-        try {
-            this.mc.setDatabase(dbName);
-        } catch (SQLException sqlException) {
-            checkAndFireConnectionError(sqlException);
-        }
-    }
-
-    @Override
     public String getDatabase() throws SQLException {
         try {
             return this.mc.getDatabase();
@@ -157,10 +143,9 @@ public class ConnectionWrapper extends WrapperBase implements JdbcConnection {
     }
 
     @Override
-    public void setCatalog(String catalog) throws SQLException {
-
+    public void setDatabase(String dbName) throws SQLException {
         try {
-            this.mc.setCatalog(catalog);
+            this.mc.setDatabase(dbName);
         } catch (SQLException sqlException) {
             checkAndFireConnectionError(sqlException);
         }
@@ -179,6 +164,16 @@ public class ConnectionWrapper extends WrapperBase implements JdbcConnection {
     }
 
     @Override
+    public void setCatalog(String catalog) throws SQLException {
+
+        try {
+            this.mc.setCatalog(catalog);
+        } catch (SQLException sqlException) {
+            checkAndFireConnectionError(sqlException);
+        }
+    }
+
+    @Override
     public boolean isClosed() throws SQLException {
         return (this.closed || this.mc.isClosed());
     }
@@ -186,15 +181,6 @@ public class ConnectionWrapper extends WrapperBase implements JdbcConnection {
     @Override
     public boolean isSourceConnection() {
         return this.mc.isSourceConnection();
-    }
-
-    @Override
-    public void setHoldability(int arg0) throws SQLException {
-        try {
-            this.mc.setHoldability(arg0);
-        } catch (SQLException sqlException) {
-            checkAndFireConnectionError(sqlException);
-        }
     }
 
     @Override
@@ -206,6 +192,15 @@ public class ConnectionWrapper extends WrapperBase implements JdbcConnection {
         }
 
         return Statement.CLOSE_CURRENT_RESULT; // we don't reach this code, compiler can't tell
+    }
+
+    @Override
+    public void setHoldability(int arg0) throws SQLException {
+        try {
+            this.mc.setHoldability(arg0);
+        } catch (SQLException sqlException) {
+            checkAndFireConnectionError(sqlException);
+        }
     }
 
     @Override
@@ -225,15 +220,6 @@ public class ConnectionWrapper extends WrapperBase implements JdbcConnection {
     }
 
     @Override
-    public void setReadOnly(boolean readOnly) throws SQLException {
-        try {
-            this.mc.setReadOnly(readOnly);
-        } catch (SQLException sqlException) {
-            checkAndFireConnectionError(sqlException);
-        }
-    }
-
-    @Override
     public boolean isReadOnly() throws SQLException {
         try {
             return this.mc.isReadOnly();
@@ -242,6 +228,15 @@ public class ConnectionWrapper extends WrapperBase implements JdbcConnection {
         }
 
         return false; // we don't reach this code, compiler can't tell
+    }
+
+    @Override
+    public void setReadOnly(boolean readOnly) throws SQLException {
+        try {
+            this.mc.setReadOnly(readOnly);
+        } catch (SQLException sqlException) {
+            checkAndFireConnectionError(sqlException);
+        }
     }
 
     @Override
@@ -277,15 +272,6 @@ public class ConnectionWrapper extends WrapperBase implements JdbcConnection {
     }
 
     @Override
-    public void setTransactionIsolation(int level) throws SQLException {
-        try {
-            this.mc.setTransactionIsolation(level);
-        } catch (SQLException sqlException) {
-            checkAndFireConnectionError(sqlException);
-        }
-    }
-
-    @Override
     public int getTransactionIsolation() throws SQLException {
         try {
             return this.mc.getTransactionIsolation();
@@ -297,6 +283,15 @@ public class ConnectionWrapper extends WrapperBase implements JdbcConnection {
     }
 
     @Override
+    public void setTransactionIsolation(int level) throws SQLException {
+        try {
+            this.mc.setTransactionIsolation(level);
+        } catch (SQLException sqlException) {
+            checkAndFireConnectionError(sqlException);
+        }
+    }
+
+    @Override
     public java.util.Map<String, Class<?>> getTypeMap() throws SQLException {
         try {
             return this.mc.getTypeMap();
@@ -305,6 +300,15 @@ public class ConnectionWrapper extends WrapperBase implements JdbcConnection {
         }
 
         return null; // we don't reach this code, compiler can't tell
+    }
+
+    @Override
+    public void setTypeMap(Map<String, Class<?>> map) throws SQLException {
+        try {
+            this.mc.setTypeMap(map);
+        } catch (SQLException sqlException) {
+            checkAndFireConnectionError(sqlException);
+        }
     }
 
     @Override
@@ -330,9 +334,8 @@ public class ConnectionWrapper extends WrapperBase implements JdbcConnection {
     /**
      * The physical connection is not actually closed. the physical connection is closed when the application server calls mysqlPooledConnection.close(). this
      * object is de-referenced by the pooled connection each time mysqlPooledConnection.getConnection() is called by app server.
-     * 
-     * @throws SQLException
-     *             if an error occurs
+     *
+     * @throws SQLException if an error occurs
      */
     @Override
     public void close() throws SQLException {
@@ -703,6 +706,11 @@ public class ConnectionWrapper extends WrapperBase implements JdbcConnection {
         return this.mc.getStatementComment();
     }
 
+    @Override
+    public void setStatementComment(String comment) {
+        this.mc.setStatementComment(comment);
+    }
+
     @Deprecated
     @Override
     public boolean hasTriedMaster() {
@@ -797,11 +805,6 @@ public class ConnectionWrapper extends WrapperBase implements JdbcConnection {
     }
 
     @Override
-    public void setStatementComment(String comment) {
-        this.mc.setStatementComment(comment);
-    }
-
-    @Override
     public void shutdownServer() throws SQLException {
         try {
             this.mc.shutdownServer();
@@ -842,27 +845,18 @@ public class ConnectionWrapper extends WrapperBase implements JdbcConnection {
     }
 
     @Override
-    public void setTypeMap(Map<String, Class<?>> map) throws SQLException {
-        try {
-            this.mc.setTypeMap(map);
-        } catch (SQLException sqlException) {
-            checkAndFireConnectionError(sqlException);
-        }
-    }
-
-    @Override
     public boolean isServerLocal() throws SQLException {
         return this.mc.isServerLocal();
     }
 
     @Override
-    public void setSchema(String schema) throws SQLException {
-        this.mc.setSchema(schema);
+    public String getSchema() throws SQLException {
+        return this.mc.getSchema();
     }
 
     @Override
-    public String getSchema() throws SQLException {
-        return this.mc.getSchema();
+    public void setSchema(String schema) throws SQLException {
+        this.mc.setSchema(schema);
     }
 
     @Override
@@ -974,24 +968,6 @@ public class ConnectionWrapper extends WrapperBase implements JdbcConnection {
     }
 
     @Override
-    public void setClientInfo(Properties properties) throws SQLClientInfoException {
-        try {
-            checkClosed();
-
-            ((java.sql.Connection) this.mc).setClientInfo(properties);
-        } catch (SQLException sqlException) {
-            try {
-                checkAndFireConnectionError(sqlException);
-            } catch (SQLException sqlEx2) {
-                SQLClientInfoException clientEx = new SQLClientInfoException();
-                clientEx.initCause(sqlEx2);
-
-                throw clientEx;
-            }
-        }
-    }
-
-    @Override
     public String getClientInfo(String name) throws SQLException {
         try {
             return ((java.sql.Connection) this.mc).getClientInfo(name);
@@ -1011,6 +987,24 @@ public class ConnectionWrapper extends WrapperBase implements JdbcConnection {
         }
 
         return null; // never reached, but compiler can't tell
+    }
+
+    @Override
+    public void setClientInfo(Properties properties) throws SQLClientInfoException {
+        try {
+            checkClosed();
+
+            ((java.sql.Connection) this.mc).setClientInfo(properties);
+        } catch (SQLException sqlException) {
+            try {
+                checkAndFireConnectionError(sqlException);
+            } catch (SQLException sqlEx2) {
+                SQLClientInfoException clientEx = new SQLClientInfoException();
+                clientEx.initCause(sqlEx2);
+
+                throw clientEx;
+            }
+        }
     }
 
     @Override
@@ -1049,14 +1043,14 @@ public class ConnectionWrapper extends WrapperBase implements JdbcConnection {
             Object cachedUnwrapped = this.unwrappedInterfaces.get(iface);
 
             if (cachedUnwrapped == null) {
-                cachedUnwrapped = Proxy.newProxyInstance(this.mc.getClass().getClassLoader(), new Class<?>[] { iface },
+                cachedUnwrapped = Proxy.newProxyInstance(this.mc.getClass().getClassLoader(), new Class<?>[]{iface},
                         new ConnectionErrorFiringInvocationHandler(this.mc));
                 this.unwrappedInterfaces.put(iface, cachedUnwrapped);
             }
 
             return iface.cast(cachedUnwrapped);
         } catch (ClassCastException cce) {
-            throw SQLError.createSQLException(Messages.getString("Common.UnableToUnwrap", new Object[] { iface.toString() }),
+            throw SQLError.createSQLException(Messages.getString("Common.UnableToUnwrap", new Object[]{iface.toString()}),
                     MysqlErrorNumbers.SQL_STATE_ILLEGAL_ARGUMENT, this.exceptionInterceptor);
         }
     }

@@ -52,16 +52,13 @@ import com.mysql.cj.result.Row;
  * Result builder producing a {@link SqlResult} instance.
  */
 public class SqlResultBuilder implements ResultBuilder<SqlResult> {
-    private ArrayList<Field> fields = new ArrayList<>();
-    private ColumnDefinition metadata;
-    private List<Row> rows = new ArrayList<>();
-
     TimeZone defaultTimeZone;
     PropertySet pset;
     boolean isRowResult = false;
-
     List<SqlSingleResult> resultSets = new ArrayList<>();
-
+    private ArrayList<Field> fields = new ArrayList<>();
+    private ColumnDefinition metadata;
+    private List<Row> rows = new ArrayList<>();
     private ProtocolEntity prevEntity = null;
     private StatementExecuteOkBuilder statementExecuteOkBuilder = new StatementExecuteOkBuilder();
 
@@ -91,7 +88,7 @@ public class SqlResultBuilder implements ResultBuilder<SqlResult> {
         }
 
         if (this.isRowResult && this.metadata == null) {
-            this.metadata = new DefaultColumnDefinition(this.fields.toArray(new Field[] {}));
+            this.metadata = new DefaultColumnDefinition(this.fields.toArray(new Field[]{}));
         }
 
         if (entity instanceof Row) {

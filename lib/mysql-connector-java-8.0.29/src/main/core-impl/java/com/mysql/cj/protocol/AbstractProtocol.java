@@ -54,7 +54,9 @@ public abstract class AbstractProtocol<M extends Message> implements Protocol<M>
 
     protected TransactionEventHandler transactionManager;
 
-    /** The logger we're going to use */
+    /**
+     * The logger we're going to use
+     */
     protected transient Log log;
 
     protected ExceptionInterceptor exceptionInterceptor;
@@ -62,18 +64,14 @@ public abstract class AbstractProtocol<M extends Message> implements Protocol<M>
     protected AuthenticationProvider<M> authProvider;
 
     protected MessageBuilder<M> messageBuilder;
-
+    protected LinkedList<StringBuilder> packetDebugRingBuffer = null;
+    protected boolean useNanosForElapsedTime;
+    protected String queryTimingUnits;
     // Default until packet sender created
     private PacketSentTimeHolder packetSentTimeHolder = new PacketSentTimeHolder() {
     };
     private PacketReceivedTimeHolder packetReceivedTimeHolder = new PacketReceivedTimeHolder() {
     };
-
-    protected LinkedList<StringBuilder> packetDebugRingBuffer = null;
-
-    protected boolean useNanosForElapsedTime;
-    protected String queryTimingUnits;
-
     private CopyOnWriteArrayList<WeakReference<ProtocolEventListener>> listeners = new CopyOnWriteArrayList<>();
 
     @Override

@@ -132,13 +132,13 @@ public class ReplicationMySQLConnection extends MultiHostMySQLConnection impleme
     }
 
     @Override
-    public void setReadOnly(boolean readOnlyFlag) throws SQLException {
-        getThisAsProxy().setReadOnly(readOnlyFlag);
+    public boolean isReadOnly() throws SQLException {
+        return getThisAsProxy().isReadOnly();
     }
 
     @Override
-    public boolean isReadOnly() throws SQLException {
-        return getThisAsProxy().isReadOnly();
+    public void setReadOnly(boolean readOnlyFlag) throws SQLException {
+        getThisAsProxy().setReadOnly(readOnlyFlag);
     }
 
     @Override
@@ -237,7 +237,7 @@ public class ReplicationMySQLConnection extends MultiHostMySQLConnection impleme
             // This works for classes that aren't actually wrapping anything
             return iface.cast(this);
         } catch (ClassCastException cce) {
-            throw SQLError.createSQLException(Messages.getString("Common.UnableToUnwrap", new Object[] { iface.toString() }),
+            throw SQLError.createSQLException(Messages.getString("Common.UnableToUnwrap", new Object[]{iface.toString()}),
                     MysqlErrorNumbers.SQL_STATE_ILLEGAL_ARGUMENT, getExceptionInterceptor());
         }
     }

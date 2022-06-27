@@ -38,13 +38,9 @@ import com.mysql.cj.protocol.Resultset;
 
 public interface Query {
 
-    public enum CancelStatus {
-        NOT_CANCELED, CANCELED_BY_USER, CANCELED_BY_TIMEOUT;
-    }
-
     /**
      * Returns the query id used when profiling
-     * 
+     *
      * @return id
      */
     int getId();
@@ -70,7 +66,7 @@ public interface Query {
      * The list is unmodifiable and might contain any combination of String,
      * ClientPreparedQueryBindings, or ServerPreparedQueryBindings depending on how the parameters were
      * batched.
-     * 
+     *
      * @return an unmodifiable List of batched args
      */
     List<Object> getBatchedArgs();
@@ -91,14 +87,14 @@ public interface Query {
 
     void setTimeoutInMillis(int timeoutInMillis);
 
-    void setExecuteTime(long executeTime);
-
     /**
      * Returns the elapsed time for the server to execute the query.
      *
      * @return the time it took for the server to execute the query.
      */
     long getExecuteTime();
+
+    void setExecuteTime(long executeTime);
 
     CancelQueryTask startQueryTimer(Query stmtToCancel, int timeout);
 
@@ -115,4 +111,8 @@ public interface Query {
     void statementBegins();
 
     void stopQueryTimer(CancelQueryTask timeoutTask, boolean rethrowCancelReason, boolean checkCancelTimeout);
+
+    public enum CancelStatus {
+        NOT_CANCELED, CANCELED_BY_USER, CANCELED_BY_TIMEOUT;
+    }
 }

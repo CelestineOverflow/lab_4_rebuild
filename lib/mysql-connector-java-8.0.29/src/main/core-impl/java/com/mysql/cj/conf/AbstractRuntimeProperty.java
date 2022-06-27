@@ -46,15 +46,10 @@ import com.mysql.cj.exceptions.PropertyNotModifiableException;
 public abstract class AbstractRuntimeProperty<T> implements RuntimeProperty<T>, Serializable {
 
     private static final long serialVersionUID = -3424722534876438236L;
-
-    private PropertyDefinition<T> propertyDefinition;
-
     protected T value;
-
     protected T initialValue;
-
     protected boolean wasExplicitlySet = false;
-
+    private PropertyDefinition<T> propertyDefinition;
     private List<WeakReference<RuntimePropertyListener>> listeners;
 
     public AbstractRuntimeProperty() {
@@ -162,6 +157,11 @@ public abstract class AbstractRuntimeProperty<T> implements RuntimeProperty<T>, 
     }
 
     @Override
+    public void setValue(T value) {
+        setValue(value, null);
+    }
+
+    @Override
     public T getInitialValue() {
         return this.initialValue;
     }
@@ -174,11 +174,9 @@ public abstract class AbstractRuntimeProperty<T> implements RuntimeProperty<T>, 
     /**
      * Set the value of a property from a string value.
      * It involves the {@link PropertyDefinition#parseObject(String, ExceptionInterceptor)} to validate and parse the string.
-     * 
-     * @param value
-     *            value
-     * @param exceptionInterceptor
-     *            exception interceptor
+     *
+     * @param value                value
+     * @param exceptionInterceptor exception interceptor
      */
     public void setValueInternal(String value, ExceptionInterceptor exceptionInterceptor) {
         setValueInternal(getPropertyDefinition().parseObject(value, exceptionInterceptor), value, exceptionInterceptor);
@@ -186,13 +184,10 @@ public abstract class AbstractRuntimeProperty<T> implements RuntimeProperty<T>, 
 
     /**
      * Internal method for setting property value; ignoring the RUNTIME_NOT_MODIFIABLE flag.
-     * 
-     * @param value
-     *            value
-     * @param valueAsString
-     *            value represented by String
-     * @param exceptionInterceptor
-     *            exception interceptor
+     *
+     * @param value                value
+     * @param valueAsString        value represented by String
+     * @param exceptionInterceptor exception interceptor
      */
     public void setValueInternal(T value, String valueAsString, ExceptionInterceptor exceptionInterceptor) {
         if (getPropertyDefinition().isRangeBased()) {
@@ -204,21 +199,13 @@ public abstract class AbstractRuntimeProperty<T> implements RuntimeProperty<T>, 
 
     /**
      * For range-based property, checks that value fit into range given by PropertyDefinition.
-     * 
-     * @param val
-     *            value
-     * @param valueAsString
-     *            value represented by String
-     * @param exceptionInterceptor
-     *            exception interceptor
+     *
+     * @param val                  value
+     * @param valueAsString        value represented by String
+     * @param exceptionInterceptor exception interceptor
      */
     protected void checkRange(T val, String valueAsString, ExceptionInterceptor exceptionInterceptor) {
         // no-op for not range-based properties
-    }
-
-    @Override
-    public void setValue(T value) {
-        setValue(value, null);
     }
 
     @Override
@@ -228,7 +215,7 @@ public abstract class AbstractRuntimeProperty<T> implements RuntimeProperty<T>, 
             invokeListeners();
         } else {
             throw ExceptionFactory.createException(PropertyNotModifiableException.class,
-                    Messages.getString("ConnectionProperties.dynamicChangeIsNotAllowed", new Object[] { "'" + getPropertyDefinition().getName() + "'" }));
+                    Messages.getString("ConnectionProperties.dynamicChangeIsNotAllowed", new Object[]{"'" + getPropertyDefinition().getName() + "'"}));
         }
     }
 }

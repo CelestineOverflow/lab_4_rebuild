@@ -159,63 +159,9 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
     protected static final int MAX_QUERY_SIZE_TO_EXPLAIN = 1024 * 1024; // don't explain queries above 1MB
     protected static final int SSL_REQUEST_LENGTH = 32;
     private static final String EXPLAINABLE_STATEMENT = "SELECT";
-    private static final String[] EXPLAINABLE_STATEMENT_EXTENSION = new String[] { "INSERT", "UPDATE", "REPLACE", "DELETE" };
-
-    protected MessageSender<NativePacketPayload> packetSender;
-    protected MessageReader<NativePacketHeader, NativePacketPayload> packetReader;
-
-    protected NativeServerSession serverSession;
-
-    /** Track this to manually shut down. */
-    protected CompressedPacketSender compressedPacketSender;
-
-    //private PacketPayload sendPacket = null;
-    protected NativePacketPayload sharedSendPacket = null;
-    /** Use this when reading in rows to avoid thousands of new() calls, because the byte arrays just get copied out of the packet anyway */
-    protected NativePacketPayload reusablePacket = null;
-
-    /**
-     * Packet used for 'LOAD DATA LOCAL INFILE'
-     * 
-     * We use a SoftReference, so that we don't penalize intermittent use of this feature
-     */
-    private SoftReference<NativePacketPayload> loadFileBufRef;
-
-    protected byte packetSequence = 0;
-    protected boolean useCompression = false;
-
-    private RuntimeProperty<Integer> maxAllowedPacket;
-    private RuntimeProperty<Boolean> useServerPrepStmts;
-
-    private boolean autoGenerateTestcaseScript;
-
-    /** Does the server support long column info? */
-    private boolean logSlowQueries = false;
-    private boolean useAutoSlowLog;
-
-    private boolean profileSQL = false;
-
-    private long slowQueryThreshold;
-
-    private int commandCount = 0;
-
-    protected boolean hadWarnings = false;
-    private int warningCount = 0;
-
-    protected Map<Class<? extends ProtocolEntity>, ProtocolEntityReader<? extends ProtocolEntity, ? extends Message>> PROTOCOL_ENTITY_CLASS_TO_TEXT_READER;
-    protected Map<Class<? extends ProtocolEntity>, ProtocolEntityReader<? extends ProtocolEntity, ? extends Message>> PROTOCOL_ENTITY_CLASS_TO_BINARY_READER;
-
-    private int statementExecutionDepth = 0;
-    private List<QueryInterceptor> queryInterceptors;
-
-    private RuntimeProperty<Boolean> maintainTimeStats;
-    private RuntimeProperty<Integer> maxQuerySizeToLog;
-
-    private InputStream localInfileInputStream;
-
-    private BaseMetricsHolder metricsHolder;
-
+    private static final String[] EXPLAINABLE_STATEMENT_EXTENSION = new String[]{"INSERT", "UPDATE", "REPLACE", "DELETE"};
     static Map<Class<?>, Supplier<ValueEncoder>> DEFAULT_ENCODERS = new HashMap<>();
+
     static {
         DEFAULT_ENCODERS.put(BigDecimal.class, NumberValueEncoder::new);
         DEFAULT_ENCODERS.put(BigInteger.class, NumberValueEncoder::new);
@@ -247,6 +193,48 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
         DEFAULT_ENCODERS.put(ZonedDateTime.class, ZonedDateTimeValueEncoder::new);
     }
 
+    protected MessageSender<NativePacketPayload> packetSender;
+    protected MessageReader<NativePacketHeader, NativePacketPayload> packetReader;
+    protected NativeServerSession serverSession;
+    /**
+     * Track this to manually shut down.
+     */
+    protected CompressedPacketSender compressedPacketSender;
+    //private PacketPayload sendPacket = null;
+    protected NativePacketPayload sharedSendPacket = null;
+    /**
+     * Use this when reading in rows to avoid thousands of new() calls, because the byte arrays just get copied out of the packet anyway
+     */
+    protected NativePacketPayload reusablePacket = null;
+    protected byte packetSequence = 0;
+    protected boolean useCompression = false;
+    protected boolean hadWarnings = false;
+    protected Map<Class<? extends ProtocolEntity>, ProtocolEntityReader<? extends ProtocolEntity, ? extends Message>> PROTOCOL_ENTITY_CLASS_TO_TEXT_READER;
+    protected Map<Class<? extends ProtocolEntity>, ProtocolEntityReader<? extends ProtocolEntity, ? extends Message>> PROTOCOL_ENTITY_CLASS_TO_BINARY_READER;
+    /**
+     * Packet used for 'LOAD DATA LOCAL INFILE'
+     * <p>
+     * We use a SoftReference, so that we don't penalize intermittent use of this feature
+     */
+    private SoftReference<NativePacketPayload> loadFileBufRef;
+    private RuntimeProperty<Integer> maxAllowedPacket;
+    private RuntimeProperty<Boolean> useServerPrepStmts;
+    private boolean autoGenerateTestcaseScript;
+    /**
+     * Does the server support long column info?
+     */
+    private boolean logSlowQueries = false;
+    private boolean useAutoSlowLog;
+    private boolean profileSQL = false;
+    private long slowQueryThreshold;
+    private int commandCount = 0;
+    private int warningCount = 0;
+    private int statementExecutionDepth = 0;
+    private List<QueryInterceptor> queryInterceptors;
+    private RuntimeProperty<Boolean> maintainTimeStats;
+    private RuntimeProperty<Integer> maxQuerySizeToLog;
+    private InputStream localInfileInputStream;
+    private BaseMetricsHolder metricsHolder;
     /**
      * The comment (if any) that we'll prepend to all queries
      * sent to the server (to show up in "SHOW PROCESSLIST")
@@ -254,17 +242,178 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
     private String queryComment = null;
 
     private NativeMessageBuilder commandBuilder = null;
+    private ResultsetRows streamingData = null;
+
+    public NativeProtocol(Log logger) {
+        this.log = logger;
+        this.metricsHolder = new BaseMetricsHolder();
+    }
 
     public static NativeProtocol getInstance(Session session, SocketConnection socketConnection, PropertySet propertySet, Log log,
-            TransactionEventHandler transactionManager) {
+                                             TransactionEventHandler transactionManager) {
         NativeProtocol protocol = new NativeProtocol(log);
         protocol.init(session, socketConnection, propertySet, transactionManager);
         return protocol;
     }
 
-    public NativeProtocol(Log logger) {
-        this.log = logger;
-        this.metricsHolder = new BaseMetricsHolder();
+    public static MysqlType findMysqlType(PropertySet propertySet, int mysqlTypeId, short colFlag, long length, LazyString tableName,
+                                          LazyString originalTableName, int collationIndex, String encoding) {
+
+        boolean isUnsigned = ((colFlag & MysqlType.FIELD_FLAG_UNSIGNED) > 0);
+        boolean isFromFunction = originalTableName.length() == 0;
+        boolean isBinary = ((colFlag & MysqlType.FIELD_FLAG_BINARY) > 0);
+        /**
+         * Is this field owned by a server-created temporary table?
+         */
+        boolean isImplicitTemporaryTable = tableName.length() > 0 && tableName.toString().startsWith("#sql_");
+
+        boolean isOpaqueBinary = (isBinary && collationIndex == CharsetMapping.MYSQL_COLLATION_INDEX_binary && (mysqlTypeId == MysqlType.FIELD_TYPE_STRING
+                || mysqlTypeId == MysqlType.FIELD_TYPE_VAR_STRING || mysqlTypeId == MysqlType.FIELD_TYPE_VARCHAR)) ?
+                // queries resolved by temp tables also have this 'signature', check for that
+                !isImplicitTemporaryTable : "binary".equalsIgnoreCase(encoding);
+
+        switch (mysqlTypeId) {
+            case MysqlType.FIELD_TYPE_DECIMAL:
+            case MysqlType.FIELD_TYPE_NEWDECIMAL:
+                return isUnsigned ? MysqlType.DECIMAL_UNSIGNED : MysqlType.DECIMAL;
+
+            case MysqlType.FIELD_TYPE_TINY:
+                // Adjust for pseudo-boolean
+                if (!isUnsigned && length == 1 && propertySet.getBooleanProperty(PropertyKey.tinyInt1isBit).getValue()) {
+                    if (propertySet.getBooleanProperty(PropertyKey.transformedBitIsBoolean).getValue()) {
+                        return MysqlType.BOOLEAN;
+                    }
+                    return MysqlType.BIT;
+                }
+                return isUnsigned ? MysqlType.TINYINT_UNSIGNED : MysqlType.TINYINT;
+
+            case MysqlType.FIELD_TYPE_SHORT:
+                return isUnsigned ? MysqlType.SMALLINT_UNSIGNED : MysqlType.SMALLINT;
+
+            case MysqlType.FIELD_TYPE_LONG:
+                return isUnsigned ? MysqlType.INT_UNSIGNED : MysqlType.INT;
+
+            case MysqlType.FIELD_TYPE_FLOAT:
+                return isUnsigned ? MysqlType.FLOAT_UNSIGNED : MysqlType.FLOAT;
+
+            case MysqlType.FIELD_TYPE_DOUBLE:
+                return isUnsigned ? MysqlType.DOUBLE_UNSIGNED : MysqlType.DOUBLE;
+
+            case MysqlType.FIELD_TYPE_NULL:
+                return MysqlType.NULL;
+
+            case MysqlType.FIELD_TYPE_TIMESTAMP:
+                return MysqlType.TIMESTAMP;
+
+            case MysqlType.FIELD_TYPE_LONGLONG:
+                return isUnsigned ? MysqlType.BIGINT_UNSIGNED : MysqlType.BIGINT;
+
+            case MysqlType.FIELD_TYPE_INT24:
+                return isUnsigned ? MysqlType.MEDIUMINT_UNSIGNED : MysqlType.MEDIUMINT;
+
+            case MysqlType.FIELD_TYPE_DATE:
+                return MysqlType.DATE;
+
+            case MysqlType.FIELD_TYPE_TIME:
+                return MysqlType.TIME;
+
+            case MysqlType.FIELD_TYPE_DATETIME:
+                return MysqlType.DATETIME;
+
+            case MysqlType.FIELD_TYPE_YEAR:
+                return MysqlType.YEAR;
+
+            case MysqlType.FIELD_TYPE_VARCHAR:
+            case MysqlType.FIELD_TYPE_VAR_STRING:
+
+                if (isOpaqueBinary && !(isFromFunction && propertySet.getBooleanProperty(PropertyKey.functionsNeverReturnBlobs).getValue())) {
+                    return MysqlType.VARBINARY;
+                }
+
+                return MysqlType.VARCHAR;
+
+            case MysqlType.FIELD_TYPE_BIT:
+                //if (length > 1) {
+                // we need to pretend this is a full binary blob
+                //this.colFlag |= MysqlType.FIELD_FLAG_BINARY;
+                //this.colFlag |= MysqlType.FIELD_FLAG_BLOB;
+                //return MysqlType.VARBINARY;
+                //}
+                return MysqlType.BIT;
+
+            case MysqlType.FIELD_TYPE_JSON:
+                return MysqlType.JSON;
+
+            case MysqlType.FIELD_TYPE_ENUM:
+                return MysqlType.ENUM;
+
+            case MysqlType.FIELD_TYPE_SET:
+                return MysqlType.SET;
+
+            case MysqlType.FIELD_TYPE_TINY_BLOB:
+                if (!isBinary || collationIndex != CharsetMapping.MYSQL_COLLATION_INDEX_binary
+                        || propertySet.getBooleanProperty(PropertyKey.blobsAreStrings).getValue()
+                        || isFromFunction && (propertySet.getBooleanProperty(PropertyKey.functionsNeverReturnBlobs).getValue())) {
+                    return MysqlType.TINYTEXT;
+                }
+                return MysqlType.TINYBLOB;
+
+            case MysqlType.FIELD_TYPE_MEDIUM_BLOB:
+                if (!isBinary || collationIndex != CharsetMapping.MYSQL_COLLATION_INDEX_binary
+                        || propertySet.getBooleanProperty(PropertyKey.blobsAreStrings).getValue()
+                        || isFromFunction && (propertySet.getBooleanProperty(PropertyKey.functionsNeverReturnBlobs).getValue())) {
+                    return MysqlType.MEDIUMTEXT;
+                }
+                return MysqlType.MEDIUMBLOB;
+
+            case MysqlType.FIELD_TYPE_LONG_BLOB:
+                if (!isBinary || collationIndex != CharsetMapping.MYSQL_COLLATION_INDEX_binary
+                        || propertySet.getBooleanProperty(PropertyKey.blobsAreStrings).getValue()
+                        || isFromFunction && (propertySet.getBooleanProperty(PropertyKey.functionsNeverReturnBlobs).getValue())) {
+                    return MysqlType.LONGTEXT;
+                }
+                return MysqlType.LONGBLOB;
+
+            case MysqlType.FIELD_TYPE_BLOB:
+                // Sometimes MySQL uses this protocol-level type for all possible BLOB variants,
+                // we can divine what the actual type is by the length reported
+
+                int newMysqlTypeId = mysqlTypeId;
+
+                // fixing initial type according to length
+                if (length <= MysqlType.TINYBLOB.getPrecision()) {
+                    newMysqlTypeId = MysqlType.FIELD_TYPE_TINY_BLOB;
+
+                } else if (length <= MysqlType.BLOB.getPrecision()) {
+                    if (!isBinary || collationIndex != CharsetMapping.MYSQL_COLLATION_INDEX_binary
+                            || propertySet.getBooleanProperty(PropertyKey.blobsAreStrings).getValue()
+                            || isFromFunction && (propertySet.getBooleanProperty(PropertyKey.functionsNeverReturnBlobs).getValue())) {
+                        newMysqlTypeId = MysqlType.FIELD_TYPE_VARCHAR;
+                        return MysqlType.TEXT;
+                    }
+                    return MysqlType.BLOB;
+
+                } else if (length <= MysqlType.MEDIUMBLOB.getPrecision()) {
+                    newMysqlTypeId = MysqlType.FIELD_TYPE_MEDIUM_BLOB;
+                } else {
+                    newMysqlTypeId = MysqlType.FIELD_TYPE_LONG_BLOB;
+                }
+
+                // call this method again with correct this.mysqlType set
+                return findMysqlType(propertySet, newMysqlTypeId, colFlag, length, tableName, originalTableName, collationIndex, encoding);
+
+            case MysqlType.FIELD_TYPE_STRING:
+                if (isOpaqueBinary && !propertySet.getBooleanProperty(PropertyKey.blobsAreStrings).getValue()) {
+                    return MysqlType.BINARY;
+                }
+                return MysqlType.CHAR;
+
+            case MysqlType.FIELD_TYPE_GEOMETRY:
+                return MysqlType.GEOMETRY;
+
+            default:
+                return MysqlType.UNKNOWN;
+        }
     }
 
     @Override
@@ -481,11 +630,9 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
 
     /**
      * Apply optional decorators to configured PacketSender and PacketReader.
-     * 
-     * @param sender
-     *            {@link MessageSender}
-     * @param messageReader
-     *            {@link MessageReader}
+     *
+     * @param sender        {@link MessageSender}
+     * @param messageReader {@link MessageReader}
      */
     public void applyPacketDecorators(MessageSender<NativePacketPayload> sender, MessageReader<NativePacketHeader, NativePacketPayload> messageReader) {
         TimeTrackingPacketSender ttSender = null;
@@ -514,7 +661,7 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
                     this.propertySet.getIntegerProperty(PropertyKey.packetDebugBufferSize));
         }
 
-        // do it after other decorators to have trace and debug applied to individual packets 
+        // do it after other decorators to have trace and debug applied to individual packets
         messageReader = new MultiPacketReader(messageReader);
 
         // atomic replacement of currently used objects
@@ -603,10 +750,8 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
     }
 
     /**
-     * @param packet
-     *            {@link Message}
-     * @param packetLen
-     *            length of header + payload
+     * @param packet    {@link Message}
+     * @param packetLen length of header + payload
      */
     @Override
     public final void send(Message packet, int packetLen) {
@@ -741,14 +886,11 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
     /**
      * Checks for errors in the reply packet, and if none, returns the reply
      * packet, ready for reading
-     * 
-     * @param command
-     *            the command being issued (if used)
+     *
+     * @param command the command being issued (if used)
      * @return NativePacketPayload
-     * @throws CJException
-     *             if an error packet was received
-     * @throws CJCommunicationsException
-     *             if a database error occurs
+     * @throws CJException               if an error packet was received
+     * @throws CJCommunicationsException if a database error occurs
      */
     private NativePacketPayload checkErrorMessage(int command) {
 
@@ -882,29 +1024,20 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
 
     /**
      * Build a query packet from the given string and send it to the server.
-     * 
-     * @param <T>
-     *            extends {@link Resultset}
-     * @param callingQuery
-     *            {@link Query}
-     * @param query
-     *            query string
-     * @param characterEncoding
-     *            Java encoding name
-     * @param maxRows
-     *            rows limit
-     * @param streamResults
-     *            whether a stream result should be created
-     * @param cachedMetadata
-     *            use this metadata instead of the one provided on wire
-     * @param resultSetFactory
-     *            {@link ProtocolEntityFactory}
+     *
+     * @param <T>               extends {@link Resultset}
+     * @param callingQuery      {@link Query}
+     * @param query             query string
+     * @param characterEncoding Java encoding name
+     * @param maxRows           rows limit
+     * @param streamResults     whether a stream result should be created
+     * @param cachedMetadata    use this metadata instead of the one provided on wire
+     * @param resultSetFactory  {@link ProtocolEntityFactory}
      * @return T instance
-     * @throws IOException
-     *             if an i/o error occurs
+     * @throws IOException if an i/o error occurs
      */
     public final <T extends Resultset> T sendQueryString(Query callingQuery, String query, String characterEncoding, int maxRows, boolean streamResults,
-            ColumnDefinition cachedMetadata, ProtocolEntityFactory<T, NativePacketPayload> resultSetFactory) throws IOException {
+                                                         ColumnDefinition cachedMetadata, ProtocolEntityFactory<T, NativePacketPayload> resultSetFactory) throws IOException {
         String statementComment = this.queryComment;
 
         if (this.propertySet.getBooleanProperty(PropertyKey.includeThreadNamesAsStatementComment).getValue()) {
@@ -999,27 +1132,19 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
 
     /**
      * Send a query stored in a packet to the server.
-     * 
-     * @param <T>
-     *            extends {@link Resultset}
-     * @param callingQuery
-     *            {@link Query}
-     * @param queryPacket
-     *            {@link NativePacketPayload} containing query
-     * @param maxRows
-     *            rows limit
-     * @param streamResults
-     *            whether a stream result should be created
-     * @param cachedMetadata
-     *            use this metadata instead of the one provided on wire
-     * @param resultSetFactory
-     *            {@link ProtocolEntityFactory}
+     *
+     * @param <T>              extends {@link Resultset}
+     * @param callingQuery     {@link Query}
+     * @param queryPacket      {@link NativePacketPayload} containing query
+     * @param maxRows          rows limit
+     * @param streamResults    whether a stream result should be created
+     * @param cachedMetadata   use this metadata instead of the one provided on wire
+     * @param resultSetFactory {@link ProtocolEntityFactory}
      * @return T instance
-     * @throws IOException
-     *             if an i/o error occurs
+     * @throws IOException if an i/o error occurs
      */
     public final <T extends Resultset> T sendQueryPacket(Query callingQuery, NativePacketPayload queryPacket, int maxRows, boolean streamResults,
-            ColumnDefinition cachedMetadata, ProtocolEntityFactory<T, NativePacketPayload> resultSetFactory) throws IOException {
+                                                         ColumnDefinition cachedMetadata, ProtocolEntityFactory<T, NativePacketPayload> resultSetFactory) throws IOException {
 
         final long queryStartTime = getCurrentTimeNanosOrMillis();
 
@@ -1080,15 +1205,15 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
                     if (queryWasSlow) {
                         eventSink.processEvent(ProfilerEvent.TYPE_SLOW_QUERY, this.session, callingQuery, rs, queryDuration, new Throwable(),
                                 Messages.getString("Protocol.SlowQuery",
-                                        new Object[] { this.useAutoSlowLog ? " 95% of all queries " : String.valueOf(this.slowQueryThreshold),
-                                                this.queryTimingUnits, Long.valueOf(queryDuration), extractedQuery }));
+                                        new Object[]{this.useAutoSlowLog ? " 95% of all queries " : String.valueOf(this.slowQueryThreshold),
+                                                this.queryTimingUnits, Long.valueOf(queryDuration), extractedQuery}));
 
                         if (this.propertySet.getBooleanProperty(PropertyKey.explainSlowQueries).getValue()) {
                             if (oldPacketPosition - queryPosition < MAX_QUERY_SIZE_TO_EXPLAIN) {
-                                queryPacket.setPosition(queryPosition); // skip until the query is located in the packet 
+                                queryPacket.setPosition(queryPosition); // skip until the query is located in the packet
                                 explainSlowQuery(query.toString(), extractedQuery);
                             } else {
-                                this.log.logWarn(Messages.getString("Protocol.3", new Object[] { MAX_QUERY_SIZE_TO_EXPLAIN }));
+                                this.log.logWarn(Messages.getString("Protocol.3", new Object[]{MAX_QUERY_SIZE_TO_EXPLAIN}));
                             }
                         }
                     }
@@ -1162,13 +1287,9 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
     }
 
     /**
-     * 
-     * @param <M>
-     *            extends {@link Message}
-     * @param queryPacket
-     *            {@link NativePacketPayload} containing query
-     * @param forceExecute
-     *            currently ignored
+     * @param <M>          extends {@link Message}
+     * @param queryPacket  {@link NativePacketPayload} containing query
+     * @param forceExecute currently ignored
      * @return M instance
      */
     public <M extends Message> M invokeQueryInterceptorsPre(M queryPacket, boolean forceExecute) {
@@ -1213,15 +1334,10 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
     }
 
     /**
-     * 
-     * @param <M>
-     *            extends {@link Message}
-     * @param queryPacket
-     *            {@link NativePacketPayload} containing query
-     * @param originalResponsePacket
-     *            {@link NativePacketPayload} containing response
-     * @param forceExecute
-     *            currently ignored
+     * @param <M>                    extends {@link Message}
+     * @param queryPacket            {@link NativePacketPayload} containing query
+     * @param originalResponsePacket {@link NativePacketPayload} containing response
+     * @param forceExecute           currently ignored
      * @return T instance
      */
     public <M extends Message> M invokeQueryInterceptorsPost(M queryPacket, M originalResponsePacket, boolean forceExecute) {
@@ -1258,12 +1374,9 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
 
     /**
      * Runs an 'EXPLAIN' on the given query and dumps the results to the log
-     * 
-     * @param query
-     *            full query string
-     * @param truncatedQuery
-     *            query string truncated for profiling
-     * 
+     *
+     * @param query          full query string
+     * @param truncatedQuery query string truncated for profiling
      */
     public void explainSlowQuery(String query, String truncatedQuery) {
         if (StringUtils.startsWithIgnoreCaseAndWs(truncatedQuery, EXPLAINABLE_STATEMENT)
@@ -1292,10 +1405,9 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
 
     /**
      * Reads and discards a single MySQL packet from the input stream.
-     * 
-     * @throws CJException
-     *             if the network fails while skipping the
-     *             packet.
+     *
+     * @throws CJException if the network fails while skipping the
+     *                     packet.
      */
     public final void skipPacket() {
         try {
@@ -1312,7 +1424,6 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
 
     /**
      * Log-off of the MySQL server and close the socket.
-     * 
      */
     public final void quit() {
         try {
@@ -1343,7 +1454,7 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
     /**
      * Returns the packet used for sending data (used by PreparedStatement) with position set to 0.
      * Guarded by external synchronization on a mutex.
-     * 
+     *
      * @return A packet to send data with
      */
     public NativePacketPayload getSharedSendPacket() {
@@ -1371,14 +1482,10 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
 
     /**
      * Re-authenticates as the given user and password
-     * 
-     * @param user
-     *            user name
-     * @param password
-     *            password
-     * @param database
-     *            database name
-     * 
+     *
+     * @param user     user name
+     * @param password password
+     * @param database database name
      */
     public void changeUser(String user, String password, String database) {
         this.packetSequence = -1;
@@ -1400,12 +1507,12 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
         return this.commandCount;
     }
 
-    public void setQueryInterceptors(List<QueryInterceptor> queryInterceptors) {
-        this.queryInterceptors = queryInterceptors.isEmpty() ? null : queryInterceptors;
-    }
-
     public List<QueryInterceptor> getQueryInterceptors() {
         return this.queryInterceptors;
+    }
+
+    public void setQueryInterceptors(List<QueryInterceptor> queryInterceptors) {
+        this.queryInterceptors = queryInterceptors.isEmpty() ? null : queryInterceptors;
     }
 
     public void setSocketTimeout(int milliseconds) {
@@ -1463,7 +1570,7 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
             dumpBuffer.append("Last " + localPacketDebugRingBuffer.size() + " packets received from server, from oldest->newest:\n");
             dumpBuffer.append("\n");
 
-            for (Iterator<StringBuilder> ringBufIter = localPacketDebugRingBuffer.iterator(); ringBufIter.hasNext();) {
+            for (Iterator<StringBuilder> ringBufIter = localPacketDebugRingBuffer.iterator(); ringBufIter.hasNext(); ) {
                 dumpBuffer.append(ringBufIter.next());
                 dumpBuffer.append("\n");
             }
@@ -1472,173 +1579,13 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
         }
     }
 
-    public boolean versionMeetsMinimum(int major, int minor, int subminor) {
-        return this.serverSession.getServerVersion().meetsMinimum(new ServerVersion(major, minor, subminor));
-    }
-
-    public static MysqlType findMysqlType(PropertySet propertySet, int mysqlTypeId, short colFlag, long length, LazyString tableName,
-            LazyString originalTableName, int collationIndex, String encoding) {
-
-        boolean isUnsigned = ((colFlag & MysqlType.FIELD_FLAG_UNSIGNED) > 0);
-        boolean isFromFunction = originalTableName.length() == 0;
-        boolean isBinary = ((colFlag & MysqlType.FIELD_FLAG_BINARY) > 0);
-        /**
-         * Is this field owned by a server-created temporary table?
-         */
-        boolean isImplicitTemporaryTable = tableName.length() > 0 && tableName.toString().startsWith("#sql_");
-
-        boolean isOpaqueBinary = (isBinary && collationIndex == CharsetMapping.MYSQL_COLLATION_INDEX_binary && (mysqlTypeId == MysqlType.FIELD_TYPE_STRING
-                || mysqlTypeId == MysqlType.FIELD_TYPE_VAR_STRING || mysqlTypeId == MysqlType.FIELD_TYPE_VARCHAR)) ?
-        // queries resolved by temp tables also have this 'signature', check for that
-                        !isImplicitTemporaryTable : "binary".equalsIgnoreCase(encoding);
-
-        switch (mysqlTypeId) {
-            case MysqlType.FIELD_TYPE_DECIMAL:
-            case MysqlType.FIELD_TYPE_NEWDECIMAL:
-                return isUnsigned ? MysqlType.DECIMAL_UNSIGNED : MysqlType.DECIMAL;
-
-            case MysqlType.FIELD_TYPE_TINY:
-                // Adjust for pseudo-boolean
-                if (!isUnsigned && length == 1 && propertySet.getBooleanProperty(PropertyKey.tinyInt1isBit).getValue()) {
-                    if (propertySet.getBooleanProperty(PropertyKey.transformedBitIsBoolean).getValue()) {
-                        return MysqlType.BOOLEAN;
-                    }
-                    return MysqlType.BIT;
-                }
-                return isUnsigned ? MysqlType.TINYINT_UNSIGNED : MysqlType.TINYINT;
-
-            case MysqlType.FIELD_TYPE_SHORT:
-                return isUnsigned ? MysqlType.SMALLINT_UNSIGNED : MysqlType.SMALLINT;
-
-            case MysqlType.FIELD_TYPE_LONG:
-                return isUnsigned ? MysqlType.INT_UNSIGNED : MysqlType.INT;
-
-            case MysqlType.FIELD_TYPE_FLOAT:
-                return isUnsigned ? MysqlType.FLOAT_UNSIGNED : MysqlType.FLOAT;
-
-            case MysqlType.FIELD_TYPE_DOUBLE:
-                return isUnsigned ? MysqlType.DOUBLE_UNSIGNED : MysqlType.DOUBLE;
-
-            case MysqlType.FIELD_TYPE_NULL:
-                return MysqlType.NULL;
-
-            case MysqlType.FIELD_TYPE_TIMESTAMP:
-                return MysqlType.TIMESTAMP;
-
-            case MysqlType.FIELD_TYPE_LONGLONG:
-                return isUnsigned ? MysqlType.BIGINT_UNSIGNED : MysqlType.BIGINT;
-
-            case MysqlType.FIELD_TYPE_INT24:
-                return isUnsigned ? MysqlType.MEDIUMINT_UNSIGNED : MysqlType.MEDIUMINT;
-
-            case MysqlType.FIELD_TYPE_DATE:
-                return MysqlType.DATE;
-
-            case MysqlType.FIELD_TYPE_TIME:
-                return MysqlType.TIME;
-
-            case MysqlType.FIELD_TYPE_DATETIME:
-                return MysqlType.DATETIME;
-
-            case MysqlType.FIELD_TYPE_YEAR:
-                return MysqlType.YEAR;
-
-            case MysqlType.FIELD_TYPE_VARCHAR:
-            case MysqlType.FIELD_TYPE_VAR_STRING:
-
-                if (isOpaqueBinary && !(isFromFunction && propertySet.getBooleanProperty(PropertyKey.functionsNeverReturnBlobs).getValue())) {
-                    return MysqlType.VARBINARY;
-                }
-
-                return MysqlType.VARCHAR;
-
-            case MysqlType.FIELD_TYPE_BIT:
-                //if (length > 1) {
-                // we need to pretend this is a full binary blob
-                //this.colFlag |= MysqlType.FIELD_FLAG_BINARY;
-                //this.colFlag |= MysqlType.FIELD_FLAG_BLOB;
-                //return MysqlType.VARBINARY;
-                //}
-                return MysqlType.BIT;
-
-            case MysqlType.FIELD_TYPE_JSON:
-                return MysqlType.JSON;
-
-            case MysqlType.FIELD_TYPE_ENUM:
-                return MysqlType.ENUM;
-
-            case MysqlType.FIELD_TYPE_SET:
-                return MysqlType.SET;
-
-            case MysqlType.FIELD_TYPE_TINY_BLOB:
-                if (!isBinary || collationIndex != CharsetMapping.MYSQL_COLLATION_INDEX_binary
-                        || propertySet.getBooleanProperty(PropertyKey.blobsAreStrings).getValue()
-                        || isFromFunction && (propertySet.getBooleanProperty(PropertyKey.functionsNeverReturnBlobs).getValue())) {
-                    return MysqlType.TINYTEXT;
-                }
-                return MysqlType.TINYBLOB;
-
-            case MysqlType.FIELD_TYPE_MEDIUM_BLOB:
-                if (!isBinary || collationIndex != CharsetMapping.MYSQL_COLLATION_INDEX_binary
-                        || propertySet.getBooleanProperty(PropertyKey.blobsAreStrings).getValue()
-                        || isFromFunction && (propertySet.getBooleanProperty(PropertyKey.functionsNeverReturnBlobs).getValue())) {
-                    return MysqlType.MEDIUMTEXT;
-                }
-                return MysqlType.MEDIUMBLOB;
-
-            case MysqlType.FIELD_TYPE_LONG_BLOB:
-                if (!isBinary || collationIndex != CharsetMapping.MYSQL_COLLATION_INDEX_binary
-                        || propertySet.getBooleanProperty(PropertyKey.blobsAreStrings).getValue()
-                        || isFromFunction && (propertySet.getBooleanProperty(PropertyKey.functionsNeverReturnBlobs).getValue())) {
-                    return MysqlType.LONGTEXT;
-                }
-                return MysqlType.LONGBLOB;
-
-            case MysqlType.FIELD_TYPE_BLOB:
-                // Sometimes MySQL uses this protocol-level type for all possible BLOB variants,
-                // we can divine what the actual type is by the length reported
-
-                int newMysqlTypeId = mysqlTypeId;
-
-                // fixing initial type according to length
-                if (length <= MysqlType.TINYBLOB.getPrecision()) {
-                    newMysqlTypeId = MysqlType.FIELD_TYPE_TINY_BLOB;
-
-                } else if (length <= MysqlType.BLOB.getPrecision()) {
-                    if (!isBinary || collationIndex != CharsetMapping.MYSQL_COLLATION_INDEX_binary
-                            || propertySet.getBooleanProperty(PropertyKey.blobsAreStrings).getValue()
-                            || isFromFunction && (propertySet.getBooleanProperty(PropertyKey.functionsNeverReturnBlobs).getValue())) {
-                        newMysqlTypeId = MysqlType.FIELD_TYPE_VARCHAR;
-                        return MysqlType.TEXT;
-                    }
-                    return MysqlType.BLOB;
-
-                } else if (length <= MysqlType.MEDIUMBLOB.getPrecision()) {
-                    newMysqlTypeId = MysqlType.FIELD_TYPE_MEDIUM_BLOB;
-                } else {
-                    newMysqlTypeId = MysqlType.FIELD_TYPE_LONG_BLOB;
-                }
-
-                // call this method again with correct this.mysqlType set
-                return findMysqlType(propertySet, newMysqlTypeId, colFlag, length, tableName, originalTableName, collationIndex, encoding);
-
-            case MysqlType.FIELD_TYPE_STRING:
-                if (isOpaqueBinary && !propertySet.getBooleanProperty(PropertyKey.blobsAreStrings).getValue()) {
-                    return MysqlType.BINARY;
-                }
-                return MysqlType.CHAR;
-
-            case MysqlType.FIELD_TYPE_GEOMETRY:
-                return MysqlType.GEOMETRY;
-
-            default:
-                return MysqlType.UNKNOWN;
-        }
-    }
-
     /*
      * Reading results
      */
+
+    public boolean versionMeetsMinimum(int major, int minor, int subminor) {
+        return this.serverSession.getServerVersion().meetsMinimum(new ServerVersion(major, minor, subminor));
+    }
 
     @Override
     public <T extends ProtocolEntity> T read(Class<T> requiredClass, ProtocolEntityFactory<T, NativePacketPayload> protocolEntityFactory) throws IOException {
@@ -1653,7 +1600,7 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
 
     @Override
     public <T extends ProtocolEntity> T read(Class<Resultset> requiredClass, int maxRows, boolean streamResults, NativePacketPayload resultPacket,
-            boolean isBinaryEncoded, ColumnDefinition metadata, ProtocolEntityFactory<T, NativePacketPayload> protocolEntityFactory) throws IOException {
+                                             boolean isBinaryEncoded, ColumnDefinition metadata, ProtocolEntityFactory<T, NativePacketPayload> protocolEntityFactory) throws IOException {
         @SuppressWarnings("unchecked")
         ProtocolEntityReader<T, NativePacketPayload> sr = isBinaryEncoded
                 ? (ProtocolEntityReader<T, NativePacketPayload>) this.PROTOCOL_ENTITY_CLASS_TO_BINARY_READER.get(requiredClass)
@@ -1666,25 +1613,18 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
 
     /**
      * Read next result set from multi-result chain.
-     * 
-     * @param <T>
-     *            extends {@link ProtocolEntity}
-     * @param currentProtocolEntity
-     *            T instance
-     * @param maxRows
-     *            rows limit
-     * @param streamResults
-     *            whether a stream result should be created
-     * @param isBinaryEncoded
-     *            true for binary protocol
-     * @param resultSetFactory
-     *            {@link ProtocolEntityFactory}
+     *
+     * @param <T>                   extends {@link ProtocolEntity}
+     * @param currentProtocolEntity T instance
+     * @param maxRows               rows limit
+     * @param streamResults         whether a stream result should be created
+     * @param isBinaryEncoded       true for binary protocol
+     * @param resultSetFactory      {@link ProtocolEntityFactory}
      * @return T instance
-     * @throws IOException
-     *             if an i/o error occurs
+     * @throws IOException if an i/o error occurs
      */
     public <T extends ProtocolEntity> T readNextResultset(T currentProtocolEntity, int maxRows, boolean streamResults, boolean isBinaryEncoded,
-            ProtocolEntityFactory<T, NativePacketPayload> resultSetFactory) throws IOException {
+                                                          ProtocolEntityFactory<T, NativePacketPayload> resultSetFactory) throws IOException {
 
         T result = null;
         if (Resultset.class.isAssignableFrom(currentProtocolEntity.getClass()) && this.serverSession.useMultiResults()) {
@@ -1704,7 +1644,7 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
                         result = currentResultSet;
                     }
                 } while (streamResults && this.serverSession.hasMoreResults() // we need to consume all result sets which don't contain rows from streamer right now,
-                        && !((Resultset) currentResultSet).hasRows()); // because next data portion from streamer is available only via ResultsetRows.next() 
+                        && !((Resultset) currentResultSet).hasRows()); // because next data portion from streamer is available only via ResultsetRows.next()
 
             }
         }
@@ -1712,7 +1652,7 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
     }
 
     public <T extends Resultset> T readAllResults(int maxRows, boolean streamResults, NativePacketPayload resultPacket, boolean isBinaryEncoded,
-            ColumnDefinition metadata, ProtocolEntityFactory<T, NativePacketPayload> resultSetFactory) throws IOException {
+                                                  ColumnDefinition metadata, ProtocolEntityFactory<T, NativePacketPayload> resultSetFactory) throws IOException {
 
         resultPacket.setPosition(0);
         T topLevelResultSet = read(Resultset.class, maxRows, streamResults, resultPacket, isBinaryEncoded, metadata, resultSetFactory);
@@ -1782,9 +1722,8 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
 
     /**
      * Reads and sends a file to the server for LOAD DATA LOCAL INFILE
-     * 
-     * @param fileName
-     *            the file name to send.
+     *
+     * @param fileName the file name to send.
      * @return NativePacketPayload
      */
     public final NativePacketPayload sendFileToServer(String fileName) {
@@ -1802,7 +1741,7 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
                 filePacket = new NativePacketPayload(packetLength);
                 this.loadFileBufRef = new SoftReference<>(filePacket);
             } catch (OutOfMemoryError oom) {
-                throw ExceptionFactory.createException(Messages.getString("MysqlIO.111", new Object[] { packetLength }),
+                throw ExceptionFactory.createException(Messages.getString("MysqlIO.111", new Object[]{packetLength}),
                         MysqlErrorNumbers.SQL_STATE_MEMORY_ALLOCATION_ERROR, 0, false, oom, this.exceptionInterceptor);
             }
         }
@@ -1893,14 +1832,14 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
         Path safePath;
         if (safePathValue.length() == 0) {
             throw ExceptionFactory.createException(
-                    Messages.getString("MysqlIO.60", new Object[] { safePathValue, PropertyKey.allowLoadLocalInfileInPath.getKeyName() }),
+                    Messages.getString("MysqlIO.60", new Object[]{safePathValue, PropertyKey.allowLoadLocalInfileInPath.getKeyName()}),
                     this.exceptionInterceptor);
         }
         try {
             safePath = Paths.get(safePathValue).toRealPath();
         } catch (IOException | InvalidPathException e) {
             throw ExceptionFactory.createException(
-                    Messages.getString("MysqlIO.60", new Object[] { safePathValue, PropertyKey.allowLoadLocalInfileInPath.getKeyName() }), e,
+                    Messages.getString("MysqlIO.60", new Object[]{safePathValue, PropertyKey.allowLoadLocalInfileInPath.getKeyName()}), e,
                     this.exceptionInterceptor);
         }
 
@@ -1909,18 +1848,18 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
                 URL urlFromFileName = new URL(fileName);
 
                 if (!urlFromFileName.getProtocol().equalsIgnoreCase("file")) {
-                    throw ExceptionFactory.createException(Messages.getString("MysqlIO.66", new Object[] { urlFromFileName.getProtocol() }),
+                    throw ExceptionFactory.createException(Messages.getString("MysqlIO.66", new Object[]{urlFromFileName.getProtocol()}),
                             this.exceptionInterceptor);
                 }
 
                 try {
                     InetAddress addr = InetAddress.getByName(urlFromFileName.getHost());
                     if (!addr.isLoopbackAddress()) {
-                        throw ExceptionFactory.createException(Messages.getString("MysqlIO.67", new Object[] { urlFromFileName.getHost() }),
+                        throw ExceptionFactory.createException(Messages.getString("MysqlIO.67", new Object[]{urlFromFileName.getHost()}),
                                 this.exceptionInterceptor);
                     }
                 } catch (UnknownHostException e) {
-                    throw ExceptionFactory.createException(Messages.getString("MysqlIO.68", new Object[] { fileName }), e, this.exceptionInterceptor);
+                    throw ExceptionFactory.createException(Messages.getString("MysqlIO.68", new Object[]{fileName}), e, this.exceptionInterceptor);
                 }
 
                 Path filePath = null;
@@ -1938,7 +1877,7 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
                     filePath = Paths.get(urlFromFileName.getPath()).toRealPath();
                 }
                 if (!filePath.startsWith(safePath)) {
-                    throw ExceptionFactory.createException(Messages.getString("MysqlIO.61", new Object[] { filePath, safePath }), this.exceptionInterceptor);
+                    throw ExceptionFactory.createException(Messages.getString("MysqlIO.61", new Object[]{filePath, safePath}), this.exceptionInterceptor);
                 }
 
                 return new BufferedInputStream(urlFromFileName.openStream());
@@ -1949,7 +1888,7 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
 
         Path filePath = Paths.get(fileName).toRealPath();
         if (!filePath.startsWith(safePath)) {
-            throw ExceptionFactory.createException(Messages.getString("MysqlIO.61", new Object[] { filePath, safePath }), this.exceptionInterceptor);
+            throw ExceptionFactory.createException(Messages.getString("MysqlIO.61", new Object[]{filePath, safePath}), this.exceptionInterceptor);
         }
         return new BufferedInputStream(new FileInputStream(filePath.toFile()));
     }
@@ -1957,8 +1896,6 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
     private int alignPacketSize(int a, int l) {
         return ((((a) + (l)) - 1) & ~((l) - 1));
     }
-
-    private ResultsetRows streamingData = null;
 
     public ResultsetRows getStreamingData() {
         return this.streamingData;
@@ -2145,13 +2082,11 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
 
     /**
      * Turns output of 'SHOW WARNINGS' into JDBC SQLWarning instances.
-     * 
+     * <p>
      * If 'forTruncationOnly' is true, only looks for truncation warnings, and
      * actually throws DataTruncation as an exception.
-     * 
-     * @param forTruncationOnly
-     *            if this method should only scan for data truncation warnings
-     * 
+     *
+     * @param forTruncationOnly if this method should only scan for data truncation warnings
      * @return the SQLWarning chain (or null if no warnings)
      */
     public SQLWarning convertShowWarningsToSQLWarnings(boolean forTruncationOnly) {
@@ -2236,10 +2171,9 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
 
     /**
      * Configures the client's timezone if required.
-     * 
-     * @throws CJException
-     *             if the timezone the server is configured to use can't be
-     *             mapped to a Java timezone.
+     *
+     * @throws CJException if the timezone the server is configured to use can't be
+     *                     mapped to a Java timezone.
      */
     public void configureTimeZone() {
         String connectionTimeZone = getPropertySet().getStringProperty(PropertyKey.connectionTimeZone).getValue();
@@ -2300,7 +2234,7 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
                 int allowedBlobSendChunkSize = Math.min(preferredBlobSendChunkSize, this.maxAllowedPacket.getValue()) - packetHeaderSize;
 
                 if (allowedBlobSendChunkSize <= 0) {
-                    throw ExceptionFactory.createException(Messages.getString("Connection.15", new Object[] { packetHeaderSize }),
+                    throw ExceptionFactory.createException(Messages.getString("Connection.15", new Object[]{packetHeaderSize}),
                             MysqlErrorNumbers.SQL_STATE_INVALID_CONNECTION_ATTRIBUTE, 0, false, null, this.exceptionInterceptor);
                 }
 

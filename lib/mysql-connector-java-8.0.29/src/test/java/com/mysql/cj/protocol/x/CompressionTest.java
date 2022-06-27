@@ -62,6 +62,13 @@ public class CompressionTest {
             + "[[ABCDEFGHIJKLMNOPQRSTUVWXYZ]][[ABCDEFGHIJKLMNOPQRSTUVWXYZ]][[ABCDEFGHIJKLMNOPQRSTUVWXYZ]][[ABCDEFGHIJKLMNOPQRSTUVWXYZ]]").getBytes(); // < 250
 
     static final byte[] uncompressedFrame1;
+    static final byte[] uncompressedFrame2;
+    static final byte[] downlinkCompressedSingleFrame;
+    static final int downlinkCompressedSingleFrame1Length;
+    static final int downlinkCompressedSingleFrame2Length;
+    static final byte[] downlinkCompressedMultipleFrame;
+    static final byte[] uplinkCompressedFrame;
+
     static {
         uncompressedFrame1 = new byte[XMessageHeader.HEADER_LENGTH + data1.length];
         ByteBuffer frame = ByteBuffer.wrap(uncompressedFrame1).order(ByteOrder.LITTLE_ENDIAN);
@@ -70,7 +77,6 @@ public class CompressionTest {
         frame.put(data1);
     }
 
-    static final byte[] uncompressedFrame2;
     static {
         uncompressedFrame2 = new byte[XMessageHeader.HEADER_LENGTH + data2.length];
         ByteBuffer frame = ByteBuffer.wrap(uncompressedFrame2).order(ByteOrder.LITTLE_ENDIAN);
@@ -79,9 +85,6 @@ public class CompressionTest {
         frame.put(data2);
     }
 
-    static final byte[] downlinkCompressedSingleFrame;
-    static final int downlinkCompressedSingleFrame1Length;
-    static final int downlinkCompressedSingleFrame2Length;
     static {
         // 1st message.
         ByteArrayOutputStream compressedOut = new ByteArrayOutputStream();
@@ -89,7 +92,7 @@ public class CompressionTest {
         try {
             deflaterOut.write(uncompressedFrame1);
             deflaterOut.flush();
-            // deflaterOut.close(); Deflater can't be closed so that a continuous stream of compressed bytes is possible. 
+            // deflaterOut.close(); Deflater can't be closed so that a continuous stream of compressed bytes is possible.
         } catch (Exception e) {
             fail(e.getMessage());
         }
@@ -102,7 +105,7 @@ public class CompressionTest {
         try {
             deflaterOut.write(uncompressedFrame2);
             deflaterOut.flush();
-            // deflaterOut.close(); Deflater can't be closed so that a continuous stream of compressed bytes is possible. 
+            // deflaterOut.close(); Deflater can't be closed so that a continuous stream of compressed bytes is possible.
         } catch (Exception e) {
             fail(e.getMessage());
         }
@@ -125,7 +128,6 @@ public class CompressionTest {
         frame.put(compressedData2, 0, compressedLength2);
     }
 
-    static final byte[] downlinkCompressedMultipleFrame;
     static {
         ByteArrayOutputStream compressedOut = new ByteArrayOutputStream();
         DeflaterOutputStream deflaterOut = new DeflaterOutputStream(compressedOut, true);
@@ -136,7 +138,7 @@ public class CompressionTest {
             // 2nd message.
             deflaterOut.write(uncompressedFrame2);
             deflaterOut.flush();
-            // deflaterOut.close(); Deflater can't be closed so that a continuous stream of compressed bytes is possible. 
+            // deflaterOut.close(); Deflater can't be closed so that a continuous stream of compressed bytes is possible.
         } catch (Exception e) {
             fail(e.getMessage());
         }
@@ -151,7 +153,6 @@ public class CompressionTest {
         frame.put(compressedData, 0, compressedLength);
     }
 
-    static final byte[] uplinkCompressedFrame;
     static {
         ByteArrayOutputStream compressedOut = new ByteArrayOutputStream();
         DeflaterOutputStream deflaterOut = new DeflaterOutputStream(compressedOut, true);
@@ -176,7 +177,7 @@ public class CompressionTest {
 
     /**
      * Tests that the {@link CompressionSplittedInputStream} reads from original underlying {@link InputStream} when data is not compressed.
-     * 
+     *
      * @throws Exception
      */
     @Test
@@ -231,7 +232,7 @@ public class CompressionTest {
 
     /**
      * Tests that the {@link CompressionSplittedInputStream} reads single compressed messages and inflates them properly.
-     * 
+     *
      * @throws Exception
      */
     @Test
@@ -283,7 +284,7 @@ public class CompressionTest {
 
     /**
      * Tests that the {@link CompressionSplittedInputStream} reads multiple compressed messages and inflates them properly.
-     * 
+     *
      * @throws Exception
      */
     @Test
@@ -335,7 +336,7 @@ public class CompressionTest {
 
     /**
      * Tests that the {@link CompressionSplittedOutputStream} writes into an underlying OutputStream properly deflated data.
-     * 
+     *
      * @throws Exception
      */
     @Test

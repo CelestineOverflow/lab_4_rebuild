@@ -41,18 +41,23 @@ import com.mysql.cj.log.Log;
 public class ReadAheadInputStream extends InputStream {
 
     private final static int DEFAULT_BUFFER_SIZE = 4096;
-
+    protected int endOfCurrentData;
+    protected int currentPosition;
+    protected boolean doDebug = false;
+    protected Log log;
     private InputStream underlyingStream;
-
     private byte buf[];
 
-    protected int endOfCurrentData;
+    public ReadAheadInputStream(InputStream toBuffer, boolean debug, Log logTo) {
+        this(toBuffer, DEFAULT_BUFFER_SIZE, debug, logTo);
+    }
 
-    protected int currentPosition;
-
-    protected boolean doDebug = false;
-
-    protected Log log;
+    public ReadAheadInputStream(InputStream toBuffer, int bufferSize, boolean debug, Log logTo) {
+        this.underlyingStream = toBuffer;
+        this.buf = new byte[bufferSize];
+        this.doDebug = debug;
+        this.log = logTo;
+    }
 
     private void fill(int readAtLeastTheseManyBytes) throws IOException {
         checkClosed();
@@ -230,17 +235,6 @@ public class ReadAheadInputStream extends InputStream {
         if (this.buf == null) {
             throw new IOException("Stream closed");
         }
-    }
-
-    public ReadAheadInputStream(InputStream toBuffer, boolean debug, Log logTo) {
-        this(toBuffer, DEFAULT_BUFFER_SIZE, debug, logTo);
-    }
-
-    public ReadAheadInputStream(InputStream toBuffer, int bufferSize, boolean debug, Log logTo) {
-        this.underlyingStream = toBuffer;
-        this.buf = new byte[bufferSize];
-        this.doDebug = debug;
-        this.log = logTo;
     }
 
     @Override

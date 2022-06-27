@@ -92,625 +92,10 @@ import com.mysql.cj.util.StringUtils;
  */
 public class DatabaseMetaData implements java.sql.DatabaseMetaData {
 
-    /**
-     * Default max buffer size. See {@link PropertyKey#maxAllowedPacket}.
-     */
-    protected static int maxBufferSize = 65535; // TODO find a way to use actual (not default) value
-
-    protected abstract class IteratorWithCleanup<T> {
-        abstract void close() throws SQLException;
-
-        abstract boolean hasNext() throws SQLException;
-
-        abstract T next() throws SQLException;
-    }
-
-    class LocalAndReferencedColumns {
-        String constraintName;
-
-        List<String> localColumnsList;
-
-        String referencedDatabase;
-
-        List<String> referencedColumnsList;
-
-        String referencedTable;
-
-        LocalAndReferencedColumns(List<String> localColumns, List<String> refColumns, String constName, String refDatabase, String refTable) {
-            this.localColumnsList = localColumns;
-            this.referencedColumnsList = refColumns;
-            this.constraintName = constName;
-            this.referencedTable = refTable;
-            this.referencedDatabase = refDatabase;
-        }
-    }
-
-    protected class StringListIterator extends IteratorWithCleanup<String> {
-        int idx = -1;
-
-        List<String> list;
-
-        StringListIterator(List<String> list) {
-            this.list = list;
-        }
-
-        @Override
-        void close() throws SQLException {
-            this.list = null;
-        }
-
-        @Override
-        boolean hasNext() throws SQLException {
-            return this.idx < this.list.size() - 1;
-        }
-
-        @Override
-        String next() throws SQLException {
-            this.idx++;
-            return this.list.get(this.idx);
-        }
-    }
-
-    protected class SingleStringIterator extends IteratorWithCleanup<String> {
-        boolean onFirst = true;
-
-        String value;
-
-        SingleStringIterator(String s) {
-            this.value = s;
-        }
-
-        @Override
-        void close() throws SQLException {
-            // not needed
-        }
-
-        @Override
-        boolean hasNext() throws SQLException {
-            return this.onFirst;
-        }
-
-        @Override
-        String next() throws SQLException {
-            this.onFirst = false;
-            return this.value;
-        }
-    }
-
-    /**
-     * Parses and represents common data type information used by various
-     * column/parameter methods.
-     */
-    class TypeDescriptor {
-        int bufferLength;
-
-        Integer datetimePrecision = null;
-        Integer columnSize = null;
-        Integer charOctetLength = null;
-
-        Integer decimalDigits = null;
-
-        String isNullable;
-
-        int nullability;
-
-        int numPrecRadix = 10;
-
-        String mysqlTypeName;
-        MysqlType mysqlType;
-
-        TypeDescriptor(String typeInfo, String nullabilityInfo) throws SQLException {
-            if (typeInfo == null) {
-                throw SQLError.createSQLException(Messages.getString("DatabaseMetaData.0"), MysqlErrorNumbers.SQL_STATE_ILLEGAL_ARGUMENT,
-                        getExceptionInterceptor());
-            }
-
-            this.mysqlType = MysqlType.getByName(typeInfo);
-
-            // Figure Out the Size
-
-            String temp;
-            java.util.StringTokenizer tokenizer;
-            int maxLength = 0;
-            int fract;
-
-            switch (this.mysqlType) {
-                case ENUM:
-                    temp = typeInfo.substring(typeInfo.indexOf("(") + 1, typeInfo.lastIndexOf(")"));
-                    tokenizer = new java.util.StringTokenizer(temp, ",");
-                    while (tokenizer.hasMoreTokens()) {
-                        String nextToken = tokenizer.nextToken();
-                        maxLength = Math.max(maxLength, (nextToken.length() - 2));
-                    }
-                    this.columnSize = Integer.valueOf(maxLength);
-                    break;
-
-                case SET:
-                    temp = typeInfo.substring(typeInfo.indexOf("(") + 1, typeInfo.lastIndexOf(")"));
-                    tokenizer = new java.util.StringTokenizer(temp, ",");
-
-                    int numElements = tokenizer.countTokens();
-                    if (numElements > 0) {
-                        maxLength += (numElements - 1);
-                    }
-
-                    while (tokenizer.hasMoreTokens()) {
-                        String setMember = tokenizer.nextToken().trim();
-
-                        if (setMember.startsWith("'") && setMember.endsWith("'")) {
-                            maxLength += setMember.length() - 2;
-                        } else {
-                            maxLength += setMember.length();
-                        }
-                    }
-                    this.columnSize = Integer.valueOf(maxLength);
-                    break;
-
-                case FLOAT:
-                case FLOAT_UNSIGNED:
-                    if (typeInfo.indexOf(",") != -1) {
-                        // Numeric with decimals
-                        this.columnSize = Integer.valueOf(typeInfo.substring((typeInfo.indexOf("(") + 1), (typeInfo.indexOf(","))).trim());
-                        this.decimalDigits = Integer.valueOf(typeInfo.substring((typeInfo.indexOf(",") + 1), (typeInfo.indexOf(")"))).trim());
-                    } else if (typeInfo.indexOf("(") != -1) {
-                        int size = Integer.valueOf(typeInfo.substring((typeInfo.indexOf("(") + 1), (typeInfo.indexOf(")"))).trim());
-                        if (size > 23) {
-                            this.mysqlType = this.mysqlType == MysqlType.FLOAT ? MysqlType.DOUBLE : MysqlType.DOUBLE_UNSIGNED;
-                            this.columnSize = Integer.valueOf(22);
-                            this.decimalDigits = 0;
-                        }
-                    } else {
-                        this.columnSize = Integer.valueOf(12);
-                        this.decimalDigits = 0;
-                    }
-                    break;
-                case DECIMAL:
-                case DECIMAL_UNSIGNED:
-                case DOUBLE:
-                case DOUBLE_UNSIGNED:
-                    if (typeInfo.indexOf(",") != -1) {
-                        // Numeric with decimals
-                        this.columnSize = Integer.valueOf(typeInfo.substring((typeInfo.indexOf("(") + 1), (typeInfo.indexOf(","))).trim());
-                        this.decimalDigits = Integer.valueOf(typeInfo.substring((typeInfo.indexOf(",") + 1), (typeInfo.indexOf(")"))).trim());
-                    } else {
-                        switch (this.mysqlType) {
-                            case DECIMAL:
-                            case DECIMAL_UNSIGNED:
-                                this.columnSize = Integer.valueOf(65);
-                                break;
-                            case DOUBLE:
-                            case DOUBLE_UNSIGNED:
-                                this.columnSize = Integer.valueOf(22);
-                                break;
-                            default:
-                                break;
-                        }
-                        this.decimalDigits = 0;
-                    }
-                    break;
-
-                case CHAR:
-                case VARCHAR:
-                case TINYTEXT:
-                case MEDIUMTEXT:
-                case LONGTEXT:
-                case JSON:
-                case TEXT:
-                case TINYBLOB:
-                case MEDIUMBLOB:
-                case LONGBLOB:
-                case BLOB:
-                case BINARY:
-                case VARBINARY:
-                case BIT:
-                    if (this.mysqlType == MysqlType.CHAR) {
-                        this.columnSize = Integer.valueOf(1);
-                    }
-                    if (typeInfo.indexOf("(") != -1) {
-                        int endParenIndex = typeInfo.indexOf(")");
-
-                        if (endParenIndex == -1) {
-                            endParenIndex = typeInfo.length();
-                        }
-
-                        this.columnSize = Integer.valueOf(typeInfo.substring((typeInfo.indexOf("(") + 1), endParenIndex).trim());
-
-                        // Adjust for pseudo-boolean
-                        if (DatabaseMetaData.this.tinyInt1isBit && this.columnSize.intValue() == 1 && StringUtils.startsWithIgnoreCase(typeInfo, "tinyint")) {
-                            if (DatabaseMetaData.this.transformedBitIsBoolean) {
-                                this.mysqlType = MysqlType.BOOLEAN;
-                            } else {
-                                this.mysqlType = MysqlType.BIT;
-                            }
-                        }
-                    }
-
-                    break;
-
-                case TINYINT:
-                    if (DatabaseMetaData.this.tinyInt1isBit && typeInfo.indexOf("(1)") != -1) {
-                        if (DatabaseMetaData.this.transformedBitIsBoolean) {
-                            this.mysqlType = MysqlType.BOOLEAN;
-                        } else {
-                            this.mysqlType = MysqlType.BIT;
-                        }
-                    } else {
-                        this.columnSize = Integer.valueOf(3);
-                    }
-                    break;
-
-                case TINYINT_UNSIGNED:
-                    this.columnSize = Integer.valueOf(3);
-                    break;
-
-                case DATE:
-                    this.datetimePrecision = 0;
-                    this.columnSize = 10;
-                    break;
-
-                case TIME:
-                    this.datetimePrecision = 0;
-                    this.columnSize = 8;
-                    if (typeInfo.indexOf("(") != -1
-                            && (fract = Integer.valueOf(typeInfo.substring((typeInfo.indexOf("(") + 1), (typeInfo.indexOf(")"))).trim())) > 0) {
-                        // with fractional seconds
-                        this.datetimePrecision = fract;
-                        this.columnSize += fract + 1;
-                    }
-                    break;
-
-                case DATETIME:
-                case TIMESTAMP:
-                    this.datetimePrecision = 0;
-                    this.columnSize = 19;
-                    if (typeInfo.indexOf("(") != -1
-                            && (fract = Integer.valueOf(typeInfo.substring((typeInfo.indexOf("(") + 1), (typeInfo.indexOf(")"))).trim())) > 0) {
-                        // with fractional seconds
-                        this.datetimePrecision = fract;
-                        this.columnSize += fract + 1;
-                    }
-                    break;
-
-                case BOOLEAN:
-                case GEOMETRY:
-                case NULL:
-                case UNKNOWN:
-                case YEAR:
-
-                default:
-            }
-
-            // if not defined explicitly take the max precision
-            if (this.columnSize == null) {
-                // JDBC spec reserved only 'int' type for precision, thus we need to cut longer values
-                this.columnSize = this.mysqlType.getPrecision() > Integer.MAX_VALUE ? Integer.MAX_VALUE : this.mysqlType.getPrecision().intValue();
-            }
-
-            switch (this.mysqlType) {
-                case CHAR:
-                case VARCHAR:
-                case TINYTEXT:
-                case MEDIUMTEXT:
-                case LONGTEXT:
-                case JSON:
-                case TEXT:
-                case TINYBLOB:
-                case MEDIUMBLOB:
-                case LONGBLOB:
-                case BLOB:
-                case BINARY:
-                case VARBINARY:
-                case BIT:
-                    this.charOctetLength = this.columnSize;
-                    break;
-                default:
-                    break;
-            }
-
-            // BUFFER_LENGTH
-            this.bufferLength = maxBufferSize;
-
-            // NUM_PREC_RADIX (is this right for char?)
-            this.numPrecRadix = 10;
-
-            // Nullable?
-            if (nullabilityInfo != null) {
-                if (nullabilityInfo.equals("YES")) {
-                    this.nullability = java.sql.DatabaseMetaData.columnNullable;
-                    this.isNullable = "YES";
-
-                } else if (nullabilityInfo.equals("UNKNOWN")) {
-                    this.nullability = java.sql.DatabaseMetaData.columnNullableUnknown;
-                    this.isNullable = "";
-
-                    // IS_NULLABLE
-                } else {
-                    this.nullability = java.sql.DatabaseMetaData.columnNoNulls;
-                    this.isNullable = "NO";
-                }
-            } else {
-                this.nullability = java.sql.DatabaseMetaData.columnNoNulls;
-                this.isNullable = "NO";
-            }
-        }
-    }
-
-    /**
-     * Helper class to provide means of comparing indexes by NON_UNIQUE, TYPE, INDEX_NAME, and ORDINAL_POSITION.
-     */
-    protected class IndexMetaDataKey implements Comparable<IndexMetaDataKey> {
-        Boolean columnNonUnique;
-        Short columnType;
-        String columnIndexName;
-        Short columnOrdinalPosition;
-
-        IndexMetaDataKey(boolean columnNonUnique, short columnType, String columnIndexName, short columnOrdinalPosition) {
-            this.columnNonUnique = columnNonUnique;
-            this.columnType = columnType;
-            this.columnIndexName = columnIndexName;
-            this.columnOrdinalPosition = columnOrdinalPosition;
-        }
-
-        @Override
-        public int compareTo(IndexMetaDataKey indexInfoKey) {
-            int compareResult;
-
-            if ((compareResult = this.columnNonUnique.compareTo(indexInfoKey.columnNonUnique)) != 0) {
-                return compareResult;
-            }
-            if ((compareResult = this.columnType.compareTo(indexInfoKey.columnType)) != 0) {
-                return compareResult;
-            }
-            if ((compareResult = this.columnIndexName.compareTo(indexInfoKey.columnIndexName)) != 0) {
-                return compareResult;
-            }
-            return this.columnOrdinalPosition.compareTo(indexInfoKey.columnOrdinalPosition);
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (obj == null) {
-                return false;
-            }
-
-            if (obj == this) {
-                return true;
-            }
-
-            if (!(obj instanceof IndexMetaDataKey)) {
-                return false;
-            }
-            return compareTo((IndexMetaDataKey) obj) == 0;
-        }
-
-        @Override
-        public int hashCode() {
-            assert false : "hashCode not designed";
-            return 0;
-        }
-    }
-
-    /**
-     * Helper class to provide means of comparing tables by TABLE_TYPE, TABLE_CAT, TABLE_SCHEM and TABLE_NAME.
-     */
-    protected class TableMetaDataKey implements Comparable<TableMetaDataKey> {
-        String tableType;
-        String tableCat;
-        String tableSchem;
-        String tableName;
-
-        TableMetaDataKey(String tableType, String tableCat, String tableSchem, String tableName) {
-            this.tableType = tableType == null ? "" : tableType;
-            this.tableCat = tableCat == null ? "" : tableCat;
-            this.tableSchem = tableSchem == null ? "" : tableSchem;
-            this.tableName = tableName == null ? "" : tableName;
-        }
-
-        @Override
-        public int compareTo(TableMetaDataKey tablesKey) {
-            int compareResult;
-
-            if ((compareResult = this.tableType.compareTo(tablesKey.tableType)) != 0) {
-                return compareResult;
-            }
-            if ((compareResult = this.tableCat.compareTo(tablesKey.tableCat)) != 0) {
-                return compareResult;
-            }
-            if ((compareResult = this.tableSchem.compareTo(tablesKey.tableSchem)) != 0) {
-                return compareResult;
-            }
-            return this.tableName.compareTo(tablesKey.tableName);
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (obj == null) {
-                return false;
-            }
-
-            if (obj == this) {
-                return true;
-            }
-
-            if (!(obj instanceof TableMetaDataKey)) {
-                return false;
-            }
-            return compareTo((TableMetaDataKey) obj) == 0;
-        }
-
-        @Override
-        public int hashCode() {
-            assert false : "hashCode not designed";
-            return 0;
-        }
-    }
-
-    /**
-     * Helper/wrapper class to provide means of sorting objects by using a sorting key.
-     * 
-     * @param <K>
-     *            key type
-     * @param <V>
-     *            value type
-     */
-    protected class ComparableWrapper<K extends Object & Comparable<? super K>, V> implements Comparable<ComparableWrapper<K, V>> {
-        K key;
-        V value;
-
-        public ComparableWrapper(K key, V value) {
-            this.key = key;
-            this.value = value;
-        }
-
-        public K getKey() {
-            return this.key;
-        }
-
-        public V getValue() {
-            return this.value;
-        }
-
-        public int compareTo(ComparableWrapper<K, V> other) {
-            return getKey().compareTo(other.getKey());
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (obj == null) {
-                return false;
-            }
-
-            if (obj == this) {
-                return true;
-            }
-
-            if (!(obj instanceof ComparableWrapper<?, ?>)) {
-                return false;
-            }
-
-            Object otherKey = ((ComparableWrapper<?, ?>) obj).getKey();
-            return this.key.equals(otherKey);
-        }
-
-        @Override
-        public int hashCode() {
-            assert false : "hashCode not designed";
-            return 0;
-        }
-
-        @Override
-        public String toString() {
-            return "{KEY:" + this.key + "; VALUE:" + this.value + "}";
-        }
-    }
-
-    /**
-     * Enumeration for Table Types
-     */
-    protected enum TableType {
-        LOCAL_TEMPORARY("LOCAL TEMPORARY"), SYSTEM_TABLE("SYSTEM TABLE"), SYSTEM_VIEW("SYSTEM VIEW"), TABLE("TABLE", new String[] { "BASE TABLE" }),
-        VIEW("VIEW"), UNKNOWN("UNKNOWN");
-
-        private String name;
-        private byte[] nameAsBytes;
-        private String[] synonyms;
-
-        TableType(String tableTypeName) {
-            this(tableTypeName, null);
-        }
-
-        TableType(String tableTypeName, String[] tableTypeSynonyms) {
-            this.name = tableTypeName;
-            this.nameAsBytes = tableTypeName.getBytes();
-            this.synonyms = tableTypeSynonyms;
-        }
-
-        String getName() {
-            return this.name;
-        }
-
-        byte[] asBytes() {
-            return this.nameAsBytes;
-        }
-
-        boolean equalsTo(String tableTypeName) {
-            return this.name.equalsIgnoreCase(tableTypeName);
-        }
-
-        static TableType getTableTypeEqualTo(String tableTypeName) {
-            for (TableType tableType : TableType.values()) {
-                if (tableType.equalsTo(tableTypeName)) {
-                    return tableType;
-                }
-            }
-            return UNKNOWN;
-        }
-
-        boolean compliesWith(String tableTypeName) {
-            if (equalsTo(tableTypeName)) {
-                return true;
-            }
-            if (this.synonyms != null) {
-                for (String synonym : this.synonyms) {
-                    if (synonym.equalsIgnoreCase(tableTypeName)) {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }
-
-        static TableType getTableTypeCompliantWith(String tableTypeName) {
-            for (TableType tableType : TableType.values()) {
-                if (tableType.compliesWith(tableTypeName)) {
-                    return tableType;
-                }
-            }
-            return UNKNOWN;
-        }
-    }
-
-    /**
-     * Enumeration for Procedure Types
-     */
-    protected enum ProcedureType {
-        PROCEDURE, FUNCTION;
-    }
-
     protected static final int MAX_IDENTIFIER_LENGTH = 64;
-
-    /** The table type for generic tables that support foreign keys. */
-    private static final String SUPPORTS_FK = "SUPPORTS_FK";
-
     protected static final byte[] TABLE_AS_BYTES = "TABLE".getBytes();
-
     protected static final byte[] SYSTEM_TABLE_AS_BYTES = "SYSTEM TABLE".getBytes();
-
     protected static final byte[] VIEW_AS_BYTES = "VIEW".getBytes();
-
-    // MySQL reserved words (all versions superset)
-    private static final String[] MYSQL_KEYWORDS = new String[] { "ACCESSIBLE", "ADD", "ALL", "ALTER", "ANALYZE", "AND", "AS", "ASC", "ASENSITIVE", "BEFORE",
-            "BETWEEN", "BIGINT", "BINARY", "BLOB", "BOTH", "BY", "CALL", "CASCADE", "CASE", "CHANGE", "CHAR", "CHARACTER", "CHECK", "COLLATE", "COLUMN",
-            "CONDITION", "CONSTRAINT", "CONTINUE", "CONVERT", "CREATE", "CROSS", "CUBE", "CUME_DIST", "CURRENT_DATE", "CURRENT_TIME", "CURRENT_TIMESTAMP",
-            "CURRENT_USER", "CURSOR", "DATABASE", "DATABASES", "DAY_HOUR", "DAY_MICROSECOND", "DAY_MINUTE", "DAY_SECOND", "DEC", "DECIMAL", "DECLARE",
-            "DEFAULT", "DELAYED", "DELETE", "DENSE_RANK", "DESC", "DESCRIBE", "DETERMINISTIC", "DISTINCT", "DISTINCTROW", "DIV", "DOUBLE", "DROP", "DUAL",
-            "EACH", "ELSE", "ELSEIF", "EMPTY", "ENCLOSED", "ESCAPED", "EXCEPT", "EXISTS", "EXIT", "EXPLAIN", "FALSE", "FETCH", "FIRST_VALUE", "FLOAT", "FLOAT4",
-            "FLOAT8", "FOR", "FORCE", "FOREIGN", "FROM", "FULLTEXT", "FUNCTION", "GENERATED", "GET", "GRANT", "GROUP", "GROUPING", "GROUPS", "HAVING",
-            "HIGH_PRIORITY", "HOUR_MICROSECOND", "HOUR_MINUTE", "HOUR_SECOND", "IF", "IGNORE", "IN", "INDEX", "INFILE", "INNER", "INOUT", "INSENSITIVE",
-            "INSERT", "INT", "INT1", "INT2", "INT3", "INT4", "INT8", "INTEGER", "INTERVAL", "INTO", "IO_AFTER_GTIDS", "IO_BEFORE_GTIDS", "IS", "ITERATE",
-            "JOIN", "JSON_TABLE", "KEY", "KEYS", "KILL", "LAG", "LAST_VALUE", "LEAD", "LEADING", "LEAVE", "LEFT", "LIKE", "LIMIT", "LINEAR", "LINES", "LOAD",
-            "LOCALTIME", "LOCALTIMESTAMP", "LOCK", "LONG", "LONGBLOB", "LONGTEXT", "LOOP", "LOW_PRIORITY", "MASTER_BIND", "MASTER_SSL_VERIFY_SERVER_CERT",
-            "MATCH", "MAXVALUE", "MEDIUMBLOB", "MEDIUMINT", "MEDIUMTEXT", "MIDDLEINT", "MINUTE_MICROSECOND", "MINUTE_SECOND", "MOD", "MODIFIES", "NATURAL",
-            "NOT", "NO_WRITE_TO_BINLOG", "NTH_VALUE", "NTILE", "NULL", "NUMERIC", "OF", "ON", "OPTIMIZE", "OPTIMIZER_COSTS", "OPTION", "OPTIONALLY", "OR",
-            "ORDER", "OUT", "OUTER", "OUTFILE", "OVER", "PARTITION", "PERCENT_RANK", "PERSIST", "PERSIST_ONLY", "PRECISION", "PRIMARY", "PROCEDURE", "PURGE",
-            "RANGE", "RANK", "READ", "READS", "READ_WRITE", "REAL", "RECURSIVE", "REFERENCES", "REGEXP", "RELEASE", "RENAME", "REPEAT", "REPLACE", "REQUIRE",
-            "RESIGNAL", "RESTRICT", "RETURN", "REVOKE", "RIGHT", "RLIKE", "ROW", "ROWS", "ROW_NUMBER", "SCHEMA", "SCHEMAS", "SECOND_MICROSECOND", "SELECT",
-            "SENSITIVE", "SEPARATOR", "SET", "SHOW", "SIGNAL", "SMALLINT", "SPATIAL", "SPECIFIC", "SQL", "SQLEXCEPTION", "SQLSTATE", "SQLWARNING",
-            "SQL_BIG_RESULT", "SQL_CALC_FOUND_ROWS", "SQL_SMALL_RESULT", "SSL", "STARTING", "STORED", "STRAIGHT_JOIN", "SYSTEM", "TABLE", "TERMINATED", "THEN",
-            "TINYBLOB", "TINYINT", "TINYTEXT", "TO", "TRAILING", "TRIGGER", "TRUE", "UNDO", "UNION", "UNIQUE", "UNLOCK", "UNSIGNED", "UPDATE", "USAGE", "USE",
-            "USING", "UTC_DATE", "UTC_TIME", "UTC_TIMESTAMP", "VALUES", "VARBINARY", "VARCHAR", "VARCHARACTER", "VARYING", "VIRTUAL", "WHEN", "WHERE", "WHILE",
-            "WINDOW", "WITH", "WRITE", "XOR", "YEAR_MONTH", "ZEROFILL" };
-
     // SQL:2003 reserved words from 'ISO/IEC 9075-2:2003 (E), 2003-07-25'
     /* package private */ static final List<String> SQL2003_KEYWORDS = Arrays.asList("ABS", "ALL", "ALLOCATE", "ALTER", "AND", "ANY", "ARE", "ARRAY", "AS",
             "ASENSITIVE", "ASYMMETRIC", "AT", "ATOMIC", "AUTHORIZATION", "AVG", "BEGIN", "BETWEEN", "BIGINT", "BINARY", "BLOB", "BOOLEAN", "BOTH", "BY", "CALL",
@@ -735,52 +120,67 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
             "TRANSLATE", "TRANSLATION", "TREAT", "TRIGGER", "TRIM", "TRUE", "UESCAPE", "UNION", "UNIQUE", "UNKNOWN", "UNNEST", "UPDATE", "UPPER", "USER",
             "USING", "VALUE", "VALUES", "VARCHAR", "VARYING", "VAR_POP", "VAR_SAMP", "WHEN", "WHENEVER", "WHERE", "WIDTH_BUCKET", "WINDOW", "WITH", "WITHIN",
             "WITHOUT", "YEAR");
-
+    /**
+     * The table type for generic tables that support foreign keys.
+     */
+    private static final String SUPPORTS_FK = "SUPPORTS_FK";
+    // MySQL reserved words (all versions superset)
+    private static final String[] MYSQL_KEYWORDS = new String[]{"ACCESSIBLE", "ADD", "ALL", "ALTER", "ANALYZE", "AND", "AS", "ASC", "ASENSITIVE", "BEFORE",
+            "BETWEEN", "BIGINT", "BINARY", "BLOB", "BOTH", "BY", "CALL", "CASCADE", "CASE", "CHANGE", "CHAR", "CHARACTER", "CHECK", "COLLATE", "COLUMN",
+            "CONDITION", "CONSTRAINT", "CONTINUE", "CONVERT", "CREATE", "CROSS", "CUBE", "CUME_DIST", "CURRENT_DATE", "CURRENT_TIME", "CURRENT_TIMESTAMP",
+            "CURRENT_USER", "CURSOR", "DATABASE", "DATABASES", "DAY_HOUR", "DAY_MICROSECOND", "DAY_MINUTE", "DAY_SECOND", "DEC", "DECIMAL", "DECLARE",
+            "DEFAULT", "DELAYED", "DELETE", "DENSE_RANK", "DESC", "DESCRIBE", "DETERMINISTIC", "DISTINCT", "DISTINCTROW", "DIV", "DOUBLE", "DROP", "DUAL",
+            "EACH", "ELSE", "ELSEIF", "EMPTY", "ENCLOSED", "ESCAPED", "EXCEPT", "EXISTS", "EXIT", "EXPLAIN", "FALSE", "FETCH", "FIRST_VALUE", "FLOAT", "FLOAT4",
+            "FLOAT8", "FOR", "FORCE", "FOREIGN", "FROM", "FULLTEXT", "FUNCTION", "GENERATED", "GET", "GRANT", "GROUP", "GROUPING", "GROUPS", "HAVING",
+            "HIGH_PRIORITY", "HOUR_MICROSECOND", "HOUR_MINUTE", "HOUR_SECOND", "IF", "IGNORE", "IN", "INDEX", "INFILE", "INNER", "INOUT", "INSENSITIVE",
+            "INSERT", "INT", "INT1", "INT2", "INT3", "INT4", "INT8", "INTEGER", "INTERVAL", "INTO", "IO_AFTER_GTIDS", "IO_BEFORE_GTIDS", "IS", "ITERATE",
+            "JOIN", "JSON_TABLE", "KEY", "KEYS", "KILL", "LAG", "LAST_VALUE", "LEAD", "LEADING", "LEAVE", "LEFT", "LIKE", "LIMIT", "LINEAR", "LINES", "LOAD",
+            "LOCALTIME", "LOCALTIMESTAMP", "LOCK", "LONG", "LONGBLOB", "LONGTEXT", "LOOP", "LOW_PRIORITY", "MASTER_BIND", "MASTER_SSL_VERIFY_SERVER_CERT",
+            "MATCH", "MAXVALUE", "MEDIUMBLOB", "MEDIUMINT", "MEDIUMTEXT", "MIDDLEINT", "MINUTE_MICROSECOND", "MINUTE_SECOND", "MOD", "MODIFIES", "NATURAL",
+            "NOT", "NO_WRITE_TO_BINLOG", "NTH_VALUE", "NTILE", "NULL", "NUMERIC", "OF", "ON", "OPTIMIZE", "OPTIMIZER_COSTS", "OPTION", "OPTIONALLY", "OR",
+            "ORDER", "OUT", "OUTER", "OUTFILE", "OVER", "PARTITION", "PERCENT_RANK", "PERSIST", "PERSIST_ONLY", "PRECISION", "PRIMARY", "PROCEDURE", "PURGE",
+            "RANGE", "RANK", "READ", "READS", "READ_WRITE", "REAL", "RECURSIVE", "REFERENCES", "REGEXP", "RELEASE", "RENAME", "REPEAT", "REPLACE", "REQUIRE",
+            "RESIGNAL", "RESTRICT", "RETURN", "REVOKE", "RIGHT", "RLIKE", "ROW", "ROWS", "ROW_NUMBER", "SCHEMA", "SCHEMAS", "SECOND_MICROSECOND", "SELECT",
+            "SENSITIVE", "SEPARATOR", "SET", "SHOW", "SIGNAL", "SMALLINT", "SPATIAL", "SPECIFIC", "SQL", "SQLEXCEPTION", "SQLSTATE", "SQLWARNING",
+            "SQL_BIG_RESULT", "SQL_CALC_FOUND_ROWS", "SQL_SMALL_RESULT", "SSL", "STARTING", "STORED", "STRAIGHT_JOIN", "SYSTEM", "TABLE", "TERMINATED", "THEN",
+            "TINYBLOB", "TINYINT", "TINYTEXT", "TO", "TRAILING", "TRIGGER", "TRUE", "UNDO", "UNION", "UNIQUE", "UNLOCK", "UNSIGNED", "UPDATE", "USAGE", "USE",
+            "USING", "UTC_DATE", "UTC_TIME", "UTC_TIMESTAMP", "VALUES", "VARBINARY", "VARCHAR", "VARCHARACTER", "VARYING", "VIRTUAL", "WHEN", "WHERE", "WHILE",
+            "WINDOW", "WITH", "WRITE", "XOR", "YEAR_MONTH", "ZEROFILL"};
+    /**
+     * Default max buffer size. See {@link PropertyKey#maxAllowedPacket}.
+     */
+    protected static int maxBufferSize = 65535; // TODO find a way to use actual (not default) value
     private static volatile String mysqlKeywords = null;
-
-    /** The connection to the database */
-    protected JdbcConnection conn;
-
-    protected NativeSession session;
-
-    /** The 'current' database name being used */
-    protected String database = null;
-
-    /** What character to use when quoting identifiers */
+    /**
+     * What character to use when quoting identifiers
+     */
     protected final String quotedId;
-
+    /**
+     * The connection to the database
+     */
+    protected JdbcConnection conn;
+    protected NativeSession session;
+    /**
+     * The 'current' database name being used
+     */
+    protected String database = null;
     protected boolean pedantic;
     protected boolean tinyInt1isBit;
     protected boolean transformedBitIsBoolean;
     protected boolean useHostsInPrivileges;
     protected boolean yearIsDateType;
-
     protected RuntimeProperty<DatabaseTerm> databaseTerm;
     protected RuntimeProperty<Boolean> nullDatabaseMeansCurrent;
-
     protected ResultSetFactory resultSetFactory;
-
     private String metadataEncoding;
     private int metadataCollationIndex;
-
-    protected static DatabaseMetaData getInstance(JdbcConnection connToSet, String databaseToSet, boolean checkForInfoSchema, ResultSetFactory resultSetFactory)
-            throws SQLException {
-        if (checkForInfoSchema && connToSet.getPropertySet().getBooleanProperty(PropertyKey.useInformationSchema).getValue()) {
-            return new DatabaseMetaDataUsingInfoSchema(connToSet, databaseToSet, resultSetFactory);
-        }
-
-        return new DatabaseMetaData(connToSet, databaseToSet, resultSetFactory);
-    }
-
+    private ExceptionInterceptor exceptionInterceptor;
     /**
      * Creates a new DatabaseMetaData object.
-     * 
-     * @param connToSet
-     *            Connection object
-     * @param databaseToSet
-     *            database name
-     * @param resultSetFactory
-     *            {@link ResultSetFactory}
+     *
+     * @param connToSet        Connection object
+     * @param databaseToSet    database name
+     * @param resultSetFactory {@link ResultSetFactory}
      */
     protected DatabaseMetaData(JdbcConnection connToSet, String databaseToSet, ResultSetFactory resultSetFactory) {
         this.conn = connToSet;
@@ -796,6 +196,39 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
         this.useHostsInPrivileges = this.conn.getPropertySet().getBooleanProperty(PropertyKey.useHostsInPrivileges).getValue();
         this.yearIsDateType = this.conn.getPropertySet().getBooleanProperty(PropertyKey.yearIsDateType).getValue();
         this.quotedId = this.session.getIdentifierQuoteString();
+    }
+
+    protected static DatabaseMetaData getInstance(JdbcConnection connToSet, String databaseToSet, boolean checkForInfoSchema, ResultSetFactory resultSetFactory)
+            throws SQLException {
+        if (checkForInfoSchema && connToSet.getPropertySet().getBooleanProperty(PropertyKey.useInformationSchema).getValue()) {
+            return new DatabaseMetaDataUsingInfoSchema(connToSet, databaseToSet, resultSetFactory);
+        }
+
+        return new DatabaseMetaData(connToSet, databaseToSet, resultSetFactory);
+    }
+
+    /**
+     * Determines the COLUMN_TYPE information based on parameter type (IN, OUT or INOUT) or function return parameter.
+     *
+     * @param isOutParam            Indicates whether it's an output parameter.
+     * @param isInParam             Indicates whether it's an input parameter.
+     * @param isReturnParam         Indicates whether it's a function return parameter.
+     * @param forGetFunctionColumns Indicates whether the column belong to a function.
+     * @return The corresponding COLUMN_TYPE as in java.sql.getProcedureColumns API.
+     */
+    protected static int getProcedureOrFunctionColumnType(boolean isOutParam, boolean isInParam, boolean isReturnParam, boolean forGetFunctionColumns) {
+
+        if (isInParam && isOutParam) {
+            return forGetFunctionColumns ? functionColumnInOut : procedureColumnInOut;
+        } else if (isInParam) {
+            return forGetFunctionColumns ? functionColumnIn : procedureColumnIn;
+        } else if (isOutParam) {
+            return forGetFunctionColumns ? functionColumnOut : procedureColumnOut;
+        } else if (isReturnParam) {
+            return forGetFunctionColumns ? functionReturn : procedureColumnReturn;
+        } else {
+            return forGetFunctionColumns ? functionColumnUnknown : procedureColumnUnknown;
+        }
     }
 
     @Override
@@ -869,7 +302,7 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
     }
 
     private Row convertTypeDescriptorToProcedureRow(byte[] procNameAsBytes, byte[] procCatAsBytes, String paramName, boolean isOutParam, boolean isInParam,
-            boolean isReturnParam, TypeDescriptor typeDesc, boolean forGetFunctionColumns, int ordinal) throws SQLException {
+                                                    boolean isReturnParam, TypeDescriptor typeDesc, boolean forGetFunctionColumns, int ordinal) throws SQLException {
         byte[][] row = forGetFunctionColumns ? new byte[17][] : new byte[20][];
         row[0] = this.databaseTerm.getValue() == DatabaseTerm.SCHEMA ? s2b("def") : procCatAsBytes;                                // PROCEDURE_CAT
         row[1] = this.databaseTerm.getValue() == DatabaseTerm.SCHEMA ? procCatAsBytes : null;                                      // PROCEDURE_SCHEM
@@ -925,53 +358,17 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
 
     /**
      * Determines the COLUMN_TYPE information based on parameter type (IN, OUT or INOUT) or function return parameter.
-     * 
-     * @param isOutParam
-     *            Indicates whether it's an output parameter.
-     * @param isInParam
-     *            Indicates whether it's an input parameter.
-     * @param isReturnParam
-     *            Indicates whether it's a function return parameter.
-     * @param forGetFunctionColumns
-     *            Indicates whether the column belong to a function. This argument is required for JDBC4, in which case
-     *            this method must be overridden to provide the correct functionality.
-     * 
+     *
+     * @param isOutParam            Indicates whether it's an output parameter.
+     * @param isInParam             Indicates whether it's an input parameter.
+     * @param isReturnParam         Indicates whether it's a function return parameter.
+     * @param forGetFunctionColumns Indicates whether the column belong to a function. This argument is required for JDBC4, in which case
+     *                              this method must be overridden to provide the correct functionality.
      * @return The corresponding COLUMN_TYPE as in java.sql.getProcedureColumns API.
      */
     protected int getColumnType(boolean isOutParam, boolean isInParam, boolean isReturnParam, boolean forGetFunctionColumns) {
         return getProcedureOrFunctionColumnType(isOutParam, isInParam, isReturnParam, forGetFunctionColumns);
     }
-
-    /**
-     * Determines the COLUMN_TYPE information based on parameter type (IN, OUT or INOUT) or function return parameter.
-     * 
-     * @param isOutParam
-     *            Indicates whether it's an output parameter.
-     * @param isInParam
-     *            Indicates whether it's an input parameter.
-     * @param isReturnParam
-     *            Indicates whether it's a function return parameter.
-     * @param forGetFunctionColumns
-     *            Indicates whether the column belong to a function.
-     * 
-     * @return The corresponding COLUMN_TYPE as in java.sql.getProcedureColumns API.
-     */
-    protected static int getProcedureOrFunctionColumnType(boolean isOutParam, boolean isInParam, boolean isReturnParam, boolean forGetFunctionColumns) {
-
-        if (isInParam && isOutParam) {
-            return forGetFunctionColumns ? functionColumnInOut : procedureColumnInOut;
-        } else if (isInParam) {
-            return forGetFunctionColumns ? functionColumnIn : procedureColumnIn;
-        } else if (isOutParam) {
-            return forGetFunctionColumns ? functionColumnOut : procedureColumnOut;
-        } else if (isReturnParam) {
-            return forGetFunctionColumns ? functionReturn : procedureColumnReturn;
-        } else {
-            return forGetFunctionColumns ? functionColumnUnknown : procedureColumnUnknown;
-        }
-    }
-
-    private ExceptionInterceptor exceptionInterceptor;
 
     protected ExceptionInterceptor getExceptionInterceptor() {
         return this.exceptionInterceptor;
@@ -999,16 +396,12 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
 
     /**
      * Extracts foreign key info for one table.
-     * 
-     * @param rows
-     *            the list of rows to add to
-     * @param rs
-     *            the result set from 'SHOW CREATE TABLE'
-     * @param dbName
-     *            the database name
+     *
+     * @param rows   the list of rows to add to
+     * @param rs     the result set from 'SHOW CREATE TABLE'
+     * @param dbName the database name
      * @return the list of rows with new rows added
-     * @throws SQLException
-     *             if a database access error occurs
+     * @throws SQLException if a database access error occurs
      */
     public List<Row> extractForeignKeyForTable(ArrayList<Row> rows, java.sql.ResultSet rs, String dbName) throws SQLException {
         byte[][] row = new byte[3][];
@@ -1147,14 +540,11 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
     /**
      * Creates a result set similar enough to 'SHOW TABLE STATUS' to allow the
      * same code to work on extracting the foreign key data
-     * 
-     * @param dbName
-     *            the database name to extract foreign key info for
-     * @param tableName
-     *            the table to extract foreign key info for
+     *
+     * @param dbName    the database name to extract foreign key info for
+     * @param tableName the table to extract foreign key info for
      * @return A result set that has the structure of 'show table status'
-     * @throws SQLException
-     *             if a database access error occurs.
+     * @throws SQLException if a database access error occurs.
      */
     public ResultSet extractForeignKeyFromCreateTable(String dbName, String tableName) throws SQLException {
         ArrayList<String> tableList = new ArrayList<>();
@@ -1165,8 +555,8 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
             tableList.add(tableName);
         } else {
             try {
-                rs = this.databaseTerm.getValue() == DatabaseTerm.SCHEMA ? getTables(null, dbName, null, new String[] { "TABLE" })
-                        : getTables(dbName, null, null, new String[] { "TABLE" });
+                rs = this.databaseTerm.getValue() == DatabaseTerm.SCHEMA ? getTables(null, dbName, null, new String[]{"TABLE"})
+                        : getTables(dbName, null, null, new String[]{"TABLE"});
 
                 while (rs.next()) {
                     tableList.add(rs.getString("TABLE_NAME"));
@@ -1394,11 +784,11 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
     /*
      * Extract parameter details for Procedures and Functions by parsing the DDL query obtained from SHOW CREATE [PROCEDURE|FUNCTION] ... statements.
      * The result rows returned follow the required structure for getProcedureColumns() and getFunctionColumns() methods.
-     * 
+     *
      * Internal use only.
      */
     private void getCallStmtParameterTypes(String db, String quotedProcName, ProcedureType procType, String parameterNamePattern, List<Row> resultRows,
-            boolean forGetFunctionColumns) throws SQLException {
+                                           boolean forGetFunctionColumns) throws SQLException {
         java.sql.Statement paramRetrievalStmt = null;
         java.sql.ResultSet paramRetrievalRs = null;
 
@@ -1442,7 +832,7 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
 
             int dotIndex = " ".equals(this.quotedId) ? quotedProcName.indexOf(".")
                     : StringUtils.indexOfIgnoreCase(0, quotedProcName, ".", this.quotedId, this.quotedId,
-                            this.session.getServerSession().isNoBackslashEscapesSet() ? SearchMode.__MRK_COM_MYM_HNT_WS : SearchMode.__BSE_MRK_COM_MYM_HNT_WS);
+                    this.session.getServerSession().isNoBackslashEscapesSet() ? SearchMode.__MRK_COM_MYM_HNT_WS : SearchMode.__BSE_MRK_COM_MYM_HNT_WS);
 
             String dbName = null;
 
@@ -1680,18 +1070,14 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
     /**
      * Finds the end of the parameter declaration from the output of "SHOW
      * CREATE PROCEDURE".
-     * 
-     * @param beginIndex
-     *            should be the index of the procedure body that contains the
-     *            first "(".
-     * @param procedureDef
-     *            the procedure body
-     * @param quoteChar
-     *            the identifier quote character in use
+     *
+     * @param beginIndex   should be the index of the procedure body that contains the
+     *                     first "(".
+     * @param procedureDef the procedure body
+     * @param quoteChar    the identifier quote character in use
      * @return the ending index of the parameter declaration, not including the
-     *         closing ")"
-     * @throws SQLException
-     *             if a parse error occurs.
+     * closing ")"
+     * @throws SQLException if a parse error occurs.
      */
     private int endPositionOfParameterDeclaration(int beginIndex, String procedureDef, String quoteChar) throws SQLException {
         int currentPos = beginIndex + 1;
@@ -1725,14 +1111,11 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
     /**
      * Finds the end of the RETURNS clause for SQL Functions by using any of the
      * keywords allowed after the RETURNS clause, or a label.
-     * 
-     * @param procedureDefn
-     *            the function body containing the definition of the function
-     * @param positionOfReturnKeyword
-     *            the position of "RETURNS" in the definition
+     *
+     * @param procedureDefn           the function body containing the definition of the function
+     * @param positionOfReturnKeyword the position of "RETURNS" in the definition
      * @return the end of the returns clause
-     * @throws SQLException
-     *             if a parse error occurs
+     * @throws SQLException if a parse error occurs
      */
     private int findEndOfReturnsClause(String procedureDefn, int positionOfReturnKeyword) throws SQLException {
         /*
@@ -1743,7 +1126,7 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
         String openingMarkers = this.quotedId + "(";
         String closingMarkers = this.quotedId + ")";
 
-        String[] tokens = new String[] { "LANGUAGE", "NOT", "DETERMINISTIC", "CONTAINS", "NO", "READ", "MODIFIES", "SQL", "COMMENT", "BEGIN", "RETURN" };
+        String[] tokens = new String[]{"LANGUAGE", "NOT", "DETERMINISTIC", "CONTAINS", "NO", "READ", "MODIFIES", "SQL", "COMMENT", "BEGIN", "RETURN"};
 
         int startLookingAt = positionOfReturnKeyword + "RETURNS".length() + 1;
 
@@ -1785,11 +1168,10 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
     /**
      * Parses the cascade option string and returns the DBMD constant that
      * represents it (for deletes)
-     * 
+     * <p>
      * Please note that in MySQL, NO ACTION is the equivalent to RESTRICT.
-     * 
-     * @param cascadeOptions
-     *            the comment from 'SHOW TABLE STATUS'
+     *
+     * @param cascadeOptions the comment from 'SHOW TABLE STATUS'
      * @return the DBMD constant that represents the cascade option
      */
     private int getCascadeDeleteOption(String cascadeOptions) {
@@ -1811,11 +1193,10 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
     /**
      * Parses the cascade option string and returns the DBMD constant that
      * represents it (for Updates).
-     * 
+     * <p>
      * Please note that in MySQL, NO ACTION is the equivalent to RESTRICT.
-     * 
-     * @param cascadeOptions
-     *            the comment from 'SHOW TABLE STATUS'
+     *
+     * @param cascadeOptions the comment from 'SHOW TABLE STATUS'
      * @return the DBMD constant that represents the cascade option
      */
     private int getCascadeUpdateOption(String cascadeOptions) {
@@ -1850,10 +1231,9 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
 
     /**
      * Retrieves the database names available on this server. The results are ordered by database name.
-     * 
+     *
      * @return list of database names
-     * @throws SQLException
-     *             if an error occurs
+     * @throws SQLException if an error occurs
      */
     protected List<String> getDatabases() throws SQLException {
         return getDatabases(null);
@@ -1861,12 +1241,10 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
 
     /**
      * Retrieves the database names matching the dbPattern available on this server. The results are ordered by database name.
-     * 
-     * @param dbPattern
-     *            database name pattern
+     *
+     * @param dbPattern database name pattern
      * @return list of database names
-     * @throws SQLException
-     *             if an error occurs
+     * @throws SQLException if an error occurs
      */
     protected List<String> getDatabases(String dbPattern) throws SQLException {
         PreparedStatement pStmt = null;
@@ -2210,8 +1588,8 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
                                 }
 
                                 rowVal[12] = results.getBytes("Default");       // COLUMN_DEF
-                                rowVal[13] = new byte[] { (byte) '0' };         // SQL_DATA_TYPE
-                                rowVal[14] = new byte[] { (byte) '0' };         // SQL_DATE_TIME_SUB
+                                rowVal[13] = new byte[]{(byte) '0'};         // SQL_DATA_TYPE
+                                rowVal[14] = new byte[]{(byte) '0'};         // SQL_DATE_TIME_SUB
 
                                 if (StringUtils.indexOfIgnoreCase(typeDesc.mysqlType.getName(), "CHAR") != -1
                                         || StringUtils.indexOfIgnoreCase(typeDesc.mysqlType.getName(), "BLOB") != -1
@@ -2290,7 +1668,7 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
         fields[2] = new Field("", "TABLE_NAME", this.metadataCollationIndex, this.metadataEncoding, MysqlType.CHAR, 255);
         fields[3] = new Field("", "COLUMN_NAME", this.metadataCollationIndex, this.metadataEncoding, MysqlType.CHAR, 32);
         fields[4] = new Field("", "DATA_TYPE", this.metadataCollationIndex, this.metadataEncoding, MysqlType.INT, 5);
-        fields[5] = new Field("", "TYPE_NAME", this.metadataCollationIndex, this.metadataEncoding, MysqlType.CHAR, 16); // TODO why is it 16 bytes long? we have longer types specifications 
+        fields[5] = new Field("", "TYPE_NAME", this.metadataCollationIndex, this.metadataEncoding, MysqlType.CHAR, 16); // TODO why is it 16 bytes long? we have longer types specifications
         fields[6] = new Field("", "COLUMN_SIZE", this.metadataCollationIndex, this.metadataEncoding, MysqlType.INT,
                 Integer.toString(Integer.MAX_VALUE).length());
         fields[7] = new Field("", "BUFFER_LENGTH", this.metadataCollationIndex, this.metadataEncoding, MysqlType.INT, 10);
@@ -2321,7 +1699,7 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
 
     @Override
     public java.sql.ResultSet getCrossReference(final String primaryCatalog, final String primarySchema, final String primaryTable, final String foreignCatalog,
-            final String foreignSchema, final String foreignTable) throws SQLException {
+                                                final String foreignSchema, final String foreignTable) throws SQLException {
         if (primaryTable == null) {
             throw SQLError.createSQLException(Messages.getString("DatabaseMetaData.2"), MysqlErrorNumbers.SQL_STATE_ILLEGAL_ARGUMENT,
                     getExceptionInterceptor());
@@ -2607,13 +1985,12 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
      * Returns the DELETE and UPDATE foreign key actions from the given 'SHOW
      * TABLE STATUS' string, with the DELETE action being the first item in the
      * array, and the UPDATE action being the second.
-     * 
-     * @param commentString
-     *            the comment from 'SHOW TABLE STATUS'
+     *
+     * @param commentString the comment from 'SHOW TABLE STATUS'
      * @return int[] [0] = delete action, [1] = update action
      */
     protected int[] getForeignKeyActions(String commentString) {
-        int[] actions = new int[] { java.sql.DatabaseMetaData.importedKeyRestrict, java.sql.DatabaseMetaData.importedKeyRestrict };
+        int[] actions = new int[]{java.sql.DatabaseMetaData.importedKeyRestrict, java.sql.DatabaseMetaData.importedKeyRestrict};
 
         int lastParenIndex = commentString.lastIndexOf(")");
 
@@ -3087,7 +2464,7 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
     }
 
     protected java.sql.ResultSet getProcedureOrFunctionColumns(Field[] fields, String catalog, String schemaPattern, String procedureOrFunctionNamePattern,
-            String columnNamePattern, boolean returnProcedures, boolean returnFunctions) throws SQLException {
+                                                               String columnNamePattern, boolean returnProcedures, boolean returnFunctions) throws SQLException {
 
         String db = getDatabase(catalog, schemaPattern);
         final boolean dbMapsToSchema = DatabaseMetaData.this.databaseTerm.getValue() == DatabaseTerm.SCHEMA;
@@ -3217,24 +2594,17 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
     }
 
     /**
-     * @param fields
-     *            fields
-     * @param catalog
-     *            catalog
-     * @param schemaPattern
-     *            schema pattern
-     * @param procedureNamePattern
-     *            procedure name pattern
-     * @param returnProcedures
-     *            true if procedures should be included into result
-     * @param returnFunctions
-     *            true if functions should be included into result
+     * @param fields               fields
+     * @param catalog              catalog
+     * @param schemaPattern        schema pattern
+     * @param procedureNamePattern procedure name pattern
+     * @param returnProcedures     true if procedures should be included into result
+     * @param returnFunctions      true if functions should be included into result
      * @return result set
-     * @throws SQLException
-     *             if a database access error occurs
+     * @throws SQLException if a database access error occurs
      */
     protected java.sql.ResultSet getProceduresAndOrFunctions(final Field[] fields, String catalog, String schemaPattern, final String procedureNamePattern,
-            final boolean returnProcedures, final boolean returnFunctions) throws SQLException {
+                                                             final boolean returnProcedures, final boolean returnFunctions) throws SQLException {
         final ArrayList<Row> procedureRows = new ArrayList<>();
 
         String db = getDatabase(catalog, schemaPattern);
@@ -3291,7 +2661,7 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
                         }
 
                     } catch (SQLException sqlEx) {
-                        // The mysql.proc table didn't exist in early MySQL versions and it's removed in MySQL 8.0, 
+                        // The mysql.proc table didn't exist in early MySQL versions and it's removed in MySQL 8.0,
                         // so use 'SHOW [FUNCTION|PROCEDURE] STATUS instead.
 
                         // Functions first:
@@ -3380,21 +2750,14 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
      * Populates the resultRows list with the imported or exported keys of given table
      * based on the keysComment from the 'show table status' sql command.
      * KeysComment is that part of the comment field that follows the "InnoDB free ...;" prefix.
-     * 
-     * @param db
-     *            the database to use
-     * @param table
-     *            the table keys are being exported from or imported to
-     * @param keysComment
-     *            the comment from 'show table status'
-     * @param resultRows
-     *            the rows to add results to
-     * @param fkTableName
-     *            the foreign key table name
-     * @param isExport
-     *            export or import keys
-     * @throws SQLException
-     *             if an error occurs
+     *
+     * @param db          the database to use
+     * @param table       the table keys are being exported from or imported to
+     * @param keysComment the comment from 'show table status'
+     * @param resultRows  the rows to add results to
+     * @param fkTableName the foreign key table name
+     * @param isExport    export or import keys
+     * @throws SQLException if an error occurs
      */
     void populateKeyResults(String db, String table, String keysComment, List<Row> resultRows, String fkTableName, boolean isExport) throws SQLException {
 
@@ -3478,10 +2841,9 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
 
     /**
      * Get a comma separated list of all a database's SQL keywords that are NOT also SQL92/SQL2003 keywords.
-     * 
+     *
      * @return the list
-     * @throws SQLException
-     *             if a database access error occurs
+     * @throws SQLException if a database access error occurs
      */
     @Override
     public String getSQLKeywords() throws SQLException {
@@ -3779,7 +3141,7 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
 
                             // We should probably check SQLState here, but that can change depending on the server version and user properties, however,
                             // we'll get a 'true' SQLException when we actually try to find the 'Type' column
-                            // 
+                            //
                             try {
                                 typeColumnIndex = results.findColumn("Type");
                                 hasTableTypes = true;
@@ -3916,13 +3278,13 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
     @Override
     public java.sql.ResultSet getTableTypes() throws SQLException {
         ArrayList<Row> tuples = new ArrayList<>();
-        Field[] fields = new Field[] { new Field("", "TABLE_TYPE", this.metadataCollationIndex, this.metadataEncoding, MysqlType.VARCHAR, 256) };
+        Field[] fields = new Field[]{new Field("", "TABLE_TYPE", this.metadataCollationIndex, this.metadataEncoding, MysqlType.VARCHAR, 256)};
 
-        tuples.add(new ByteArrayRow(new byte[][] { TableType.LOCAL_TEMPORARY.asBytes() }, getExceptionInterceptor()));
-        tuples.add(new ByteArrayRow(new byte[][] { TableType.SYSTEM_TABLE.asBytes() }, getExceptionInterceptor()));
-        tuples.add(new ByteArrayRow(new byte[][] { TableType.SYSTEM_VIEW.asBytes() }, getExceptionInterceptor()));
-        tuples.add(new ByteArrayRow(new byte[][] { TableType.TABLE.asBytes() }, getExceptionInterceptor()));
-        tuples.add(new ByteArrayRow(new byte[][] { TableType.VIEW.asBytes() }, getExceptionInterceptor()));
+        tuples.add(new ByteArrayRow(new byte[][]{TableType.LOCAL_TEMPORARY.asBytes()}, getExceptionInterceptor()));
+        tuples.add(new ByteArrayRow(new byte[][]{TableType.SYSTEM_TABLE.asBytes()}, getExceptionInterceptor()));
+        tuples.add(new ByteArrayRow(new byte[][]{TableType.SYSTEM_VIEW.asBytes()}, getExceptionInterceptor()));
+        tuples.add(new ByteArrayRow(new byte[][]{TableType.TABLE.asBytes()}, getExceptionInterceptor()));
+        tuples.add(new ByteArrayRow(new byte[][]{TableType.VIEW.asBytes()}, getExceptionInterceptor()));
 
         return this.resultSetFactory.createFromResultsetRows(ResultSet.CONCUR_READ_ONLY, ResultSet.TYPE_SCROLL_INSENSITIVE,
                 new ResultsetRowsStatic(tuples, new DefaultColumnDefinition(fields)));
@@ -3936,12 +3298,9 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
     }
 
     /**
-     * 
-     * @param mysqlTypeName
-     *            we use a string name here to allow aliases for the same MysqlType to be listed too
+     * @param mysqlTypeName we use a string name here to allow aliases for the same MysqlType to be listed too
      * @return bytes
-     * @throws SQLException
-     *             if a conversion error occurs
+     * @throws SQLException if a conversion error occurs
      */
     private byte[][] getTypeInfo(String mysqlTypeName) throws SQLException {
 
@@ -4404,12 +3763,10 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
     /**
      * Converts the given string to bytes, using the connection's character
      * encoding, or if not available, the JVM default encoding.
-     * 
-     * @param s
-     *            string
+     *
+     * @param s string
      * @return bytes
-     * @throws SQLException
-     *             if a conversion error occurs
+     * @throws SQLException if a conversion error occurs
      */
     protected byte[] s2b(String s) throws SQLException {
         if (s == null) {
@@ -4856,7 +4213,7 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
     }
 
     protected Field[] createFunctionColumnsFields() {
-        Field[] fields = { new Field("", "FUNCTION_CAT", this.metadataCollationIndex, this.metadataEncoding, MysqlType.VARCHAR, 512),
+        Field[] fields = {new Field("", "FUNCTION_CAT", this.metadataCollationIndex, this.metadataEncoding, MysqlType.VARCHAR, 512),
                 new Field("", "FUNCTION_SCHEM", this.metadataCollationIndex, this.metadataEncoding, MysqlType.VARCHAR, 512),
                 new Field("", "FUNCTION_NAME", this.metadataCollationIndex, this.metadataEncoding, MysqlType.VARCHAR, 512),
                 new Field("", "COLUMN_NAME", this.metadataCollationIndex, this.metadataEncoding, MysqlType.VARCHAR, 512),
@@ -4872,7 +4229,7 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
                 new Field("", "CHAR_OCTET_LENGTH", this.metadataCollationIndex, this.metadataEncoding, MysqlType.INT, 32),
                 new Field("", "ORDINAL_POSITION", this.metadataCollationIndex, this.metadataEncoding, MysqlType.INT, 32),
                 new Field("", "IS_NULLABLE", this.metadataCollationIndex, this.metadataEncoding, MysqlType.VARCHAR, 12),
-                new Field("", "SPECIFIC_NAME", this.metadataCollationIndex, this.metadataEncoding, MysqlType.VARCHAR, 64) };
+                new Field("", "SPECIFIC_NAME", this.metadataCollationIndex, this.metadataEncoding, MysqlType.VARCHAR, 64)};
         return fields;
     }
 
@@ -4903,12 +4260,10 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
 
     /**
      * Get a prepared statement to query information_schema tables.
-     * 
-     * @param sql
-     *            query
+     *
+     * @param sql query
      * @return PreparedStatement
-     * @throws SQLException
-     *             if a database access error occurs
+     * @throws SQLException if a database access error occurs
      */
     protected java.sql.PreparedStatement prepareMetaDataSafeStatement(String sql) throws SQLException {
         // Can't use server-side here as we coerce a lot of types to match the spec.
@@ -4925,7 +4280,7 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
 
     @Override
     public java.sql.ResultSet getPseudoColumns(String catalog, String schemaPattern, String tableNamePattern, String columnNamePattern) throws SQLException {
-        Field[] fields = { new Field("", "TABLE_CAT", this.metadataCollationIndex, this.metadataEncoding, MysqlType.VARCHAR, 512),
+        Field[] fields = {new Field("", "TABLE_CAT", this.metadataCollationIndex, this.metadataEncoding, MysqlType.VARCHAR, 512),
                 new Field("", "TABLE_SCHEM", this.metadataCollationIndex, this.metadataEncoding, MysqlType.VARCHAR, 512),
                 new Field("", "TABLE_NAME", this.metadataCollationIndex, this.metadataEncoding, MysqlType.VARCHAR, 512),
                 new Field("", "COLUMN_NAME", this.metadataCollationIndex, this.metadataEncoding, MysqlType.VARCHAR, 512),
@@ -4936,7 +4291,7 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
                 new Field("", "COLUMN_USAGE", this.metadataCollationIndex, this.metadataEncoding, MysqlType.VARCHAR, 512),
                 new Field("", "REMARKS", this.metadataCollationIndex, this.metadataEncoding, MysqlType.VARCHAR, 512),
                 new Field("", "CHAR_OCTET_LENGTH", this.metadataCollationIndex, this.metadataEncoding, MysqlType.INT, 12),
-                new Field("", "IS_NULLABLE", this.metadataCollationIndex, this.metadataEncoding, MysqlType.VARCHAR, 512) };
+                new Field("", "IS_NULLABLE", this.metadataCollationIndex, this.metadataEncoding, MysqlType.VARCHAR, 512)};
 
         return this.resultSetFactory.createFromResultsetRows(ResultSet.CONCUR_READ_ONLY, ResultSet.TYPE_SCROLL_INSENSITIVE,
                 new ResultsetRowsStatic(new ArrayList<Row>(), new DefaultColumnDefinition(fields)));
@@ -4954,7 +4309,7 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
             // anything
             return iface.cast(this);
         } catch (ClassCastException cce) {
-            throw SQLError.createSQLException(Messages.getString("Common.UnableToUnwrap", new Object[] { iface.toString() }),
+            throw SQLError.createSQLException(Messages.getString("Common.UnableToUnwrap", new Object[]{iface.toString()}),
                     MysqlErrorNumbers.SQL_STATE_ILLEGAL_ARGUMENT, this.conn.getExceptionInterceptor());
         }
     }
@@ -4989,5 +4344,583 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
 
     public void setMetadataCollationIndex(int metadataCollationIndex) {
         this.metadataCollationIndex = metadataCollationIndex;
+    }
+
+    /**
+     * Enumeration for Table Types
+     */
+    protected enum TableType {
+        LOCAL_TEMPORARY("LOCAL TEMPORARY"), SYSTEM_TABLE("SYSTEM TABLE"), SYSTEM_VIEW("SYSTEM VIEW"), TABLE("TABLE", new String[]{"BASE TABLE"}),
+        VIEW("VIEW"), UNKNOWN("UNKNOWN");
+
+        private String name;
+        private byte[] nameAsBytes;
+        private String[] synonyms;
+
+        TableType(String tableTypeName) {
+            this(tableTypeName, null);
+        }
+
+        TableType(String tableTypeName, String[] tableTypeSynonyms) {
+            this.name = tableTypeName;
+            this.nameAsBytes = tableTypeName.getBytes();
+            this.synonyms = tableTypeSynonyms;
+        }
+
+        static TableType getTableTypeEqualTo(String tableTypeName) {
+            for (TableType tableType : TableType.values()) {
+                if (tableType.equalsTo(tableTypeName)) {
+                    return tableType;
+                }
+            }
+            return UNKNOWN;
+        }
+
+        static TableType getTableTypeCompliantWith(String tableTypeName) {
+            for (TableType tableType : TableType.values()) {
+                if (tableType.compliesWith(tableTypeName)) {
+                    return tableType;
+                }
+            }
+            return UNKNOWN;
+        }
+
+        String getName() {
+            return this.name;
+        }
+
+        byte[] asBytes() {
+            return this.nameAsBytes;
+        }
+
+        boolean equalsTo(String tableTypeName) {
+            return this.name.equalsIgnoreCase(tableTypeName);
+        }
+
+        boolean compliesWith(String tableTypeName) {
+            if (equalsTo(tableTypeName)) {
+                return true;
+            }
+            if (this.synonyms != null) {
+                for (String synonym : this.synonyms) {
+                    if (synonym.equalsIgnoreCase(tableTypeName)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+    }
+
+    /**
+     * Enumeration for Procedure Types
+     */
+    protected enum ProcedureType {
+        PROCEDURE, FUNCTION;
+    }
+
+    protected abstract class IteratorWithCleanup<T> {
+        abstract void close() throws SQLException;
+
+        abstract boolean hasNext() throws SQLException;
+
+        abstract T next() throws SQLException;
+    }
+
+    class LocalAndReferencedColumns {
+        String constraintName;
+
+        List<String> localColumnsList;
+
+        String referencedDatabase;
+
+        List<String> referencedColumnsList;
+
+        String referencedTable;
+
+        LocalAndReferencedColumns(List<String> localColumns, List<String> refColumns, String constName, String refDatabase, String refTable) {
+            this.localColumnsList = localColumns;
+            this.referencedColumnsList = refColumns;
+            this.constraintName = constName;
+            this.referencedTable = refTable;
+            this.referencedDatabase = refDatabase;
+        }
+    }
+
+    protected class StringListIterator extends IteratorWithCleanup<String> {
+        int idx = -1;
+
+        List<String> list;
+
+        StringListIterator(List<String> list) {
+            this.list = list;
+        }
+
+        @Override
+        void close() throws SQLException {
+            this.list = null;
+        }
+
+        @Override
+        boolean hasNext() throws SQLException {
+            return this.idx < this.list.size() - 1;
+        }
+
+        @Override
+        String next() throws SQLException {
+            this.idx++;
+            return this.list.get(this.idx);
+        }
+    }
+
+    protected class SingleStringIterator extends IteratorWithCleanup<String> {
+        boolean onFirst = true;
+
+        String value;
+
+        SingleStringIterator(String s) {
+            this.value = s;
+        }
+
+        @Override
+        void close() throws SQLException {
+            // not needed
+        }
+
+        @Override
+        boolean hasNext() throws SQLException {
+            return this.onFirst;
+        }
+
+        @Override
+        String next() throws SQLException {
+            this.onFirst = false;
+            return this.value;
+        }
+    }
+
+    /**
+     * Parses and represents common data type information used by various
+     * column/parameter methods.
+     */
+    class TypeDescriptor {
+        int bufferLength;
+
+        Integer datetimePrecision = null;
+        Integer columnSize = null;
+        Integer charOctetLength = null;
+
+        Integer decimalDigits = null;
+
+        String isNullable;
+
+        int nullability;
+
+        int numPrecRadix = 10;
+
+        String mysqlTypeName;
+        MysqlType mysqlType;
+
+        TypeDescriptor(String typeInfo, String nullabilityInfo) throws SQLException {
+            if (typeInfo == null) {
+                throw SQLError.createSQLException(Messages.getString("DatabaseMetaData.0"), MysqlErrorNumbers.SQL_STATE_ILLEGAL_ARGUMENT,
+                        getExceptionInterceptor());
+            }
+
+            this.mysqlType = MysqlType.getByName(typeInfo);
+
+            // Figure Out the Size
+
+            String temp;
+            java.util.StringTokenizer tokenizer;
+            int maxLength = 0;
+            int fract;
+
+            switch (this.mysqlType) {
+                case ENUM:
+                    temp = typeInfo.substring(typeInfo.indexOf("(") + 1, typeInfo.lastIndexOf(")"));
+                    tokenizer = new java.util.StringTokenizer(temp, ",");
+                    while (tokenizer.hasMoreTokens()) {
+                        String nextToken = tokenizer.nextToken();
+                        maxLength = Math.max(maxLength, (nextToken.length() - 2));
+                    }
+                    this.columnSize = Integer.valueOf(maxLength);
+                    break;
+
+                case SET:
+                    temp = typeInfo.substring(typeInfo.indexOf("(") + 1, typeInfo.lastIndexOf(")"));
+                    tokenizer = new java.util.StringTokenizer(temp, ",");
+
+                    int numElements = tokenizer.countTokens();
+                    if (numElements > 0) {
+                        maxLength += (numElements - 1);
+                    }
+
+                    while (tokenizer.hasMoreTokens()) {
+                        String setMember = tokenizer.nextToken().trim();
+
+                        if (setMember.startsWith("'") && setMember.endsWith("'")) {
+                            maxLength += setMember.length() - 2;
+                        } else {
+                            maxLength += setMember.length();
+                        }
+                    }
+                    this.columnSize = Integer.valueOf(maxLength);
+                    break;
+
+                case FLOAT:
+                case FLOAT_UNSIGNED:
+                    if (typeInfo.indexOf(",") != -1) {
+                        // Numeric with decimals
+                        this.columnSize = Integer.valueOf(typeInfo.substring((typeInfo.indexOf("(") + 1), (typeInfo.indexOf(","))).trim());
+                        this.decimalDigits = Integer.valueOf(typeInfo.substring((typeInfo.indexOf(",") + 1), (typeInfo.indexOf(")"))).trim());
+                    } else if (typeInfo.indexOf("(") != -1) {
+                        int size = Integer.valueOf(typeInfo.substring((typeInfo.indexOf("(") + 1), (typeInfo.indexOf(")"))).trim());
+                        if (size > 23) {
+                            this.mysqlType = this.mysqlType == MysqlType.FLOAT ? MysqlType.DOUBLE : MysqlType.DOUBLE_UNSIGNED;
+                            this.columnSize = Integer.valueOf(22);
+                            this.decimalDigits = 0;
+                        }
+                    } else {
+                        this.columnSize = Integer.valueOf(12);
+                        this.decimalDigits = 0;
+                    }
+                    break;
+                case DECIMAL:
+                case DECIMAL_UNSIGNED:
+                case DOUBLE:
+                case DOUBLE_UNSIGNED:
+                    if (typeInfo.indexOf(",") != -1) {
+                        // Numeric with decimals
+                        this.columnSize = Integer.valueOf(typeInfo.substring((typeInfo.indexOf("(") + 1), (typeInfo.indexOf(","))).trim());
+                        this.decimalDigits = Integer.valueOf(typeInfo.substring((typeInfo.indexOf(",") + 1), (typeInfo.indexOf(")"))).trim());
+                    } else {
+                        switch (this.mysqlType) {
+                            case DECIMAL:
+                            case DECIMAL_UNSIGNED:
+                                this.columnSize = Integer.valueOf(65);
+                                break;
+                            case DOUBLE:
+                            case DOUBLE_UNSIGNED:
+                                this.columnSize = Integer.valueOf(22);
+                                break;
+                            default:
+                                break;
+                        }
+                        this.decimalDigits = 0;
+                    }
+                    break;
+
+                case CHAR:
+                case VARCHAR:
+                case TINYTEXT:
+                case MEDIUMTEXT:
+                case LONGTEXT:
+                case JSON:
+                case TEXT:
+                case TINYBLOB:
+                case MEDIUMBLOB:
+                case LONGBLOB:
+                case BLOB:
+                case BINARY:
+                case VARBINARY:
+                case BIT:
+                    if (this.mysqlType == MysqlType.CHAR) {
+                        this.columnSize = Integer.valueOf(1);
+                    }
+                    if (typeInfo.indexOf("(") != -1) {
+                        int endParenIndex = typeInfo.indexOf(")");
+
+                        if (endParenIndex == -1) {
+                            endParenIndex = typeInfo.length();
+                        }
+
+                        this.columnSize = Integer.valueOf(typeInfo.substring((typeInfo.indexOf("(") + 1), endParenIndex).trim());
+
+                        // Adjust for pseudo-boolean
+                        if (DatabaseMetaData.this.tinyInt1isBit && this.columnSize.intValue() == 1 && StringUtils.startsWithIgnoreCase(typeInfo, "tinyint")) {
+                            if (DatabaseMetaData.this.transformedBitIsBoolean) {
+                                this.mysqlType = MysqlType.BOOLEAN;
+                            } else {
+                                this.mysqlType = MysqlType.BIT;
+                            }
+                        }
+                    }
+
+                    break;
+
+                case TINYINT:
+                    if (DatabaseMetaData.this.tinyInt1isBit && typeInfo.indexOf("(1)") != -1) {
+                        if (DatabaseMetaData.this.transformedBitIsBoolean) {
+                            this.mysqlType = MysqlType.BOOLEAN;
+                        } else {
+                            this.mysqlType = MysqlType.BIT;
+                        }
+                    } else {
+                        this.columnSize = Integer.valueOf(3);
+                    }
+                    break;
+
+                case TINYINT_UNSIGNED:
+                    this.columnSize = Integer.valueOf(3);
+                    break;
+
+                case DATE:
+                    this.datetimePrecision = 0;
+                    this.columnSize = 10;
+                    break;
+
+                case TIME:
+                    this.datetimePrecision = 0;
+                    this.columnSize = 8;
+                    if (typeInfo.indexOf("(") != -1
+                            && (fract = Integer.valueOf(typeInfo.substring((typeInfo.indexOf("(") + 1), (typeInfo.indexOf(")"))).trim())) > 0) {
+                        // with fractional seconds
+                        this.datetimePrecision = fract;
+                        this.columnSize += fract + 1;
+                    }
+                    break;
+
+                case DATETIME:
+                case TIMESTAMP:
+                    this.datetimePrecision = 0;
+                    this.columnSize = 19;
+                    if (typeInfo.indexOf("(") != -1
+                            && (fract = Integer.valueOf(typeInfo.substring((typeInfo.indexOf("(") + 1), (typeInfo.indexOf(")"))).trim())) > 0) {
+                        // with fractional seconds
+                        this.datetimePrecision = fract;
+                        this.columnSize += fract + 1;
+                    }
+                    break;
+
+                case BOOLEAN:
+                case GEOMETRY:
+                case NULL:
+                case UNKNOWN:
+                case YEAR:
+
+                default:
+            }
+
+            // if not defined explicitly take the max precision
+            if (this.columnSize == null) {
+                // JDBC spec reserved only 'int' type for precision, thus we need to cut longer values
+                this.columnSize = this.mysqlType.getPrecision() > Integer.MAX_VALUE ? Integer.MAX_VALUE : this.mysqlType.getPrecision().intValue();
+            }
+
+            switch (this.mysqlType) {
+                case CHAR:
+                case VARCHAR:
+                case TINYTEXT:
+                case MEDIUMTEXT:
+                case LONGTEXT:
+                case JSON:
+                case TEXT:
+                case TINYBLOB:
+                case MEDIUMBLOB:
+                case LONGBLOB:
+                case BLOB:
+                case BINARY:
+                case VARBINARY:
+                case BIT:
+                    this.charOctetLength = this.columnSize;
+                    break;
+                default:
+                    break;
+            }
+
+            // BUFFER_LENGTH
+            this.bufferLength = maxBufferSize;
+
+            // NUM_PREC_RADIX (is this right for char?)
+            this.numPrecRadix = 10;
+
+            // Nullable?
+            if (nullabilityInfo != null) {
+                if (nullabilityInfo.equals("YES")) {
+                    this.nullability = java.sql.DatabaseMetaData.columnNullable;
+                    this.isNullable = "YES";
+
+                } else if (nullabilityInfo.equals("UNKNOWN")) {
+                    this.nullability = java.sql.DatabaseMetaData.columnNullableUnknown;
+                    this.isNullable = "";
+
+                    // IS_NULLABLE
+                } else {
+                    this.nullability = java.sql.DatabaseMetaData.columnNoNulls;
+                    this.isNullable = "NO";
+                }
+            } else {
+                this.nullability = java.sql.DatabaseMetaData.columnNoNulls;
+                this.isNullable = "NO";
+            }
+        }
+    }
+
+    /**
+     * Helper class to provide means of comparing indexes by NON_UNIQUE, TYPE, INDEX_NAME, and ORDINAL_POSITION.
+     */
+    protected class IndexMetaDataKey implements Comparable<IndexMetaDataKey> {
+        Boolean columnNonUnique;
+        Short columnType;
+        String columnIndexName;
+        Short columnOrdinalPosition;
+
+        IndexMetaDataKey(boolean columnNonUnique, short columnType, String columnIndexName, short columnOrdinalPosition) {
+            this.columnNonUnique = columnNonUnique;
+            this.columnType = columnType;
+            this.columnIndexName = columnIndexName;
+            this.columnOrdinalPosition = columnOrdinalPosition;
+        }
+
+        @Override
+        public int compareTo(IndexMetaDataKey indexInfoKey) {
+            int compareResult;
+
+            if ((compareResult = this.columnNonUnique.compareTo(indexInfoKey.columnNonUnique)) != 0) {
+                return compareResult;
+            }
+            if ((compareResult = this.columnType.compareTo(indexInfoKey.columnType)) != 0) {
+                return compareResult;
+            }
+            if ((compareResult = this.columnIndexName.compareTo(indexInfoKey.columnIndexName)) != 0) {
+                return compareResult;
+            }
+            return this.columnOrdinalPosition.compareTo(indexInfoKey.columnOrdinalPosition);
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == null) {
+                return false;
+            }
+
+            if (obj == this) {
+                return true;
+            }
+
+            if (!(obj instanceof IndexMetaDataKey)) {
+                return false;
+            }
+            return compareTo((IndexMetaDataKey) obj) == 0;
+        }
+
+        @Override
+        public int hashCode() {
+            assert false : "hashCode not designed";
+            return 0;
+        }
+    }
+
+    /**
+     * Helper class to provide means of comparing tables by TABLE_TYPE, TABLE_CAT, TABLE_SCHEM and TABLE_NAME.
+     */
+    protected class TableMetaDataKey implements Comparable<TableMetaDataKey> {
+        String tableType;
+        String tableCat;
+        String tableSchem;
+        String tableName;
+
+        TableMetaDataKey(String tableType, String tableCat, String tableSchem, String tableName) {
+            this.tableType = tableType == null ? "" : tableType;
+            this.tableCat = tableCat == null ? "" : tableCat;
+            this.tableSchem = tableSchem == null ? "" : tableSchem;
+            this.tableName = tableName == null ? "" : tableName;
+        }
+
+        @Override
+        public int compareTo(TableMetaDataKey tablesKey) {
+            int compareResult;
+
+            if ((compareResult = this.tableType.compareTo(tablesKey.tableType)) != 0) {
+                return compareResult;
+            }
+            if ((compareResult = this.tableCat.compareTo(tablesKey.tableCat)) != 0) {
+                return compareResult;
+            }
+            if ((compareResult = this.tableSchem.compareTo(tablesKey.tableSchem)) != 0) {
+                return compareResult;
+            }
+            return this.tableName.compareTo(tablesKey.tableName);
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == null) {
+                return false;
+            }
+
+            if (obj == this) {
+                return true;
+            }
+
+            if (!(obj instanceof TableMetaDataKey)) {
+                return false;
+            }
+            return compareTo((TableMetaDataKey) obj) == 0;
+        }
+
+        @Override
+        public int hashCode() {
+            assert false : "hashCode not designed";
+            return 0;
+        }
+    }
+
+    /**
+     * Helper/wrapper class to provide means of sorting objects by using a sorting key.
+     *
+     * @param <K> key type
+     * @param <V> value type
+     */
+    protected class ComparableWrapper<K extends Object & Comparable<? super K>, V> implements Comparable<ComparableWrapper<K, V>> {
+        K key;
+        V value;
+
+        public ComparableWrapper(K key, V value) {
+            this.key = key;
+            this.value = value;
+        }
+
+        public K getKey() {
+            return this.key;
+        }
+
+        public V getValue() {
+            return this.value;
+        }
+
+        public int compareTo(ComparableWrapper<K, V> other) {
+            return getKey().compareTo(other.getKey());
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == null) {
+                return false;
+            }
+
+            if (obj == this) {
+                return true;
+            }
+
+            if (!(obj instanceof ComparableWrapper<?, ?>)) {
+                return false;
+            }
+
+            Object otherKey = ((ComparableWrapper<?, ?>) obj).getKey();
+            return this.key.equals(otherKey);
+        }
+
+        @Override
+        public int hashCode() {
+            assert false : "hashCode not designed";
+            return 0;
+        }
+
+        @Override
+        public String toString() {
+            return "{KEY:" + this.key + "; VALUE:" + this.value + "}";
+        }
     }
 }

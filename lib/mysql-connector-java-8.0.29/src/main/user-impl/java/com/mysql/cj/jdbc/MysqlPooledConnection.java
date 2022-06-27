@@ -51,20 +51,15 @@ import com.mysql.cj.jdbc.exceptions.SQLError;
  */
 public class MysqlPooledConnection implements PooledConnection {
 
-    protected static MysqlPooledConnection getInstance(com.mysql.cj.jdbc.JdbcConnection connection) throws SQLException {
-        return new MysqlPooledConnection(connection);
-    }
-
     /**
      * The flag for an exception being thrown.
      */
     public static final int CONNECTION_ERROR_EVENT = 1;
-
     /**
      * The flag for a connection being closed.
      */
     public static final int CONNECTION_CLOSED_EVENT = 2;
-
+    private final Map<StatementEventListener, StatementEventListener> statementEventListeners = new HashMap<>();
     private Map<ConnectionEventListener, ConnectionEventListener> connectionEventListeners;
 
     private Connection logicalHandle;
@@ -73,19 +68,20 @@ public class MysqlPooledConnection implements PooledConnection {
 
     private ExceptionInterceptor exceptionInterceptor;
 
-    private final Map<StatementEventListener, StatementEventListener> statementEventListeners = new HashMap<>();
-
     /**
      * Construct a new MysqlPooledConnection and set instance variables
-     * 
-     * @param connection
-     *            physical connection to db
+     *
+     * @param connection physical connection to db
      */
     public MysqlPooledConnection(com.mysql.cj.jdbc.JdbcConnection connection) {
         this.logicalHandle = null;
         this.physicalConn = connection;
         this.connectionEventListeners = new HashMap<>();
         this.exceptionInterceptor = this.physicalConn.getExceptionInterceptor();
+    }
+
+    protected static MysqlPooledConnection getInstance(com.mysql.cj.jdbc.JdbcConnection connection) throws SQLException {
+        return new MysqlPooledConnection(connection);
     }
 
     @Override
@@ -166,12 +162,10 @@ public class MysqlPooledConnection implements PooledConnection {
      * Instantiates a new ConnectionEvent which wraps sqlException and invokes
      * either connectionClose or connectionErrorOccurred on listener as
      * appropriate.
-     * 
-     * @param eventType
-     *            value indicating whether connectionClosed or
-     *            connectionErrorOccurred called
-     * @param sqlException
-     *            the exception being thrown
+     *
+     * @param eventType    value indicating whether connectionClosed or
+     *                     connectionErrorOccurred called
+     * @param sqlException the exception being thrown
      */
     protected synchronized void callConnectionEventListeners(int eventType, SQLException sqlException) {
 

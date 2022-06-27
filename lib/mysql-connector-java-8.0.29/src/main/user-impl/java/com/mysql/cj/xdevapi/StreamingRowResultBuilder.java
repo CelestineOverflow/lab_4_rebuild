@@ -50,13 +50,12 @@ import com.mysql.cj.result.RowList;
  * Result builder producing a streaming {@link RowResult} instance.
  */
 public class StreamingRowResultBuilder implements ResultBuilder<RowResult> {
-    private ArrayList<Field> fields = new ArrayList<>();
-    private ColumnDefinition metadata;
-    private RowList rowList = null;
-
     TimeZone defaultTimeZone;
     PropertySet pset;
     XProtocol protocol;
+    private ArrayList<Field> fields = new ArrayList<>();
+    private ColumnDefinition metadata;
+    private RowList rowList = null;
     private StatementExecuteOkBuilder statementExecuteOkBuilder = new StatementExecuteOkBuilder();
 
     public StreamingRowResultBuilder(MysqlxSession sess) {
@@ -76,7 +75,7 @@ public class StreamingRowResultBuilder implements ResultBuilder<RowResult> {
         }
 
         if (this.metadata == null) {
-            this.metadata = new DefaultColumnDefinition(this.fields.toArray(new Field[] {}));
+            this.metadata = new DefaultColumnDefinition(this.fields.toArray(new Field[]{}));
         }
 
         this.rowList = entity instanceof Row ? new XProtocolRowInputStream(this.metadata, (Row) entity, this.protocol, (n) -> {

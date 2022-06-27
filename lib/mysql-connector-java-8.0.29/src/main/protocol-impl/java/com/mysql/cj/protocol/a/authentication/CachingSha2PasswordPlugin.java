@@ -48,11 +48,6 @@ import com.mysql.cj.util.StringUtils;
 
 public class CachingSha2PasswordPlugin extends Sha256PasswordPlugin {
     public static String PLUGIN_NAME = "caching_sha2_password";
-
-    public enum AuthStage {
-        FAST_AUTH_SEND_SCRAMBLE, FAST_AUTH_READ_RESULT, FAST_AUTH_COMPLETE, FULL_AUTH;
-    }
-
     private AuthStage stage = AuthStage.FAST_AUTH_SEND_SCRAMBLE;
 
     @Override
@@ -83,7 +78,7 @@ public class CachingSha2PasswordPlugin extends Sha256PasswordPlugin {
 
         if (this.password == null || this.password.length() == 0 || fromServer == null) {
             // no password
-            NativePacketPayload packet = new NativePacketPayload(new byte[] { 0 });
+            NativePacketPayload packet = new NativePacketPayload(new byte[]{0});
             toServer.add(packet);
 
         } else {
@@ -144,7 +139,7 @@ public class CachingSha2PasswordPlugin extends Sha256PasswordPlugin {
                         this.publicKeyRequested = false;
                     } else {
                         // build and send Public Key Retrieval packet
-                        NativePacketPayload packet = new NativePacketPayload(new byte[] { 2 }); // was 1 in sha256_password
+                        NativePacketPayload packet = new NativePacketPayload(new byte[]{2}); // was 1 in sha256_password
                         toServer.add(packet);
                         this.publicKeyRequested = true;
                     }
@@ -162,5 +157,9 @@ public class CachingSha2PasswordPlugin extends Sha256PasswordPlugin {
             return super.encryptPassword();
         }
         return super.encryptPassword("RSA/ECB/PKCS1Padding");
+    }
+
+    public enum AuthStage {
+        FAST_AUTH_SEND_SCRAMBLE, FAST_AUTH_READ_RESULT, FAST_AUTH_COMPLETE, FULL_AUTH;
     }
 }

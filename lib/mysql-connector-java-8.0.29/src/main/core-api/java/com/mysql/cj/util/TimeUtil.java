@@ -59,11 +59,8 @@ import com.mysql.cj.exceptions.WrongArgumentException;
  * Time zone conversion routines and other time related methods
  */
 public class TimeUtil {
-    static final TimeZone GMT_TIMEZONE = TimeZone.getTimeZone("GMT");
-
     public static final LocalDate DEFAULT_DATE = LocalDate.of(1970, 1, 1);
     public static final LocalTime DEFAULT_TIME = LocalTime.of(0, 0);
-
     public static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     public static final DateTimeFormatter TIME_FORMATTER_NO_FRACT_NO_OFFSET = DateTimeFormatter.ofPattern("HH:mm:ss");
     public static final DateTimeFormatter TIME_FORMATTER_WITH_NANOS_NO_OFFSET = DateTimeFormatter.ofPattern("HH:mm:ss.SSSSSSSSS");
@@ -78,33 +75,27 @@ public class TimeUtil {
     public static final DateTimeFormatter DATETIME_FORMATTER_WITH_NANOS_WITH_OFFSET = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSSSSSXXX");
     public static final DateTimeFormatter DATETIME_FORMATTER_WITH_OPTIONAL_MICROS = new DateTimeFormatterBuilder().appendPattern("yyyy-MM-dd HH:mm:ss")
             .appendFraction(ChronoField.NANO_OF_SECOND, 0, 6, true).toFormatter();
-
     public static final Pattern DATE_LITERAL_WITH_DELIMITERS = Pattern
             .compile("(\\d{4}|\\d{2})[\\p{Punct}&&[^:]](([0])?[1-9]|[1][0-2])[\\p{Punct}&&[^:]](([0])?[1-9]|[1-2]\\d|[3][0-1])");
     public static final Pattern DATE_LITERAL_NO_DELIMITERS = Pattern.compile("(\\d{4}|\\d{2})([0][1-9]|[1][0-2])([0][1-9]|[1-2]\\d|[3][0-1])");
-
     public static final Pattern TIME_LITERAL_WITH_DELIMITERS = Pattern.compile("(([0-1])?\\d|[2][0-3]):([0-5])?\\d(:([0-5])?\\d(\\.\\d{1,9})?)?");
     public static final Pattern TIME_LITERAL_SHORT6 = Pattern.compile("([0-1]\\d|[2][0-3])([0-5]\\d){2}(\\.\\d{1,9})?");
     public static final Pattern TIME_LITERAL_SHORT4 = Pattern.compile("([0-5]\\d){2}(\\.\\d{1,9})?");
     public static final Pattern TIME_LITERAL_SHORT2 = Pattern.compile("[0-5]\\d(\\.\\d{1,9})?");
-
     public static final Pattern DATETIME_LITERAL_WITH_DELIMITERS = Pattern.compile(
             "(\\d{4}|\\d{2})\\p{Punct}(([0])?[1-9]|[1][0-2])\\p{Punct}(([0])?[1-9]|[1-2]\\d|[3][0-1])[ T](([0-1])?\\d|[2][0-3])\\p{Punct}([0-5])?\\d(\\p{Punct}([0-5])?\\d(\\.\\d{1,9})?)?");
     public static final Pattern DATETIME_LITERAL_SHORT14 = Pattern
             .compile("\\d{4}([0][1-9]|[1][0-2])([0][1-9]|[1-2]\\d|[3][0-1])([0-1]\\d|[2][0-3])([0-5]\\d){2}(\\.\\d{1,9}){0,1}");
     public static final Pattern DATETIME_LITERAL_SHORT12 = Pattern
             .compile("\\d{2}([0][1-9]|[1][0-2])([0][1-9]|[1-2]\\d|[3][0-1])([0-1]\\d|[2][0-3])([0-5]\\d){2}(\\.\\d{1,9}){0,1}");
-
     public static final Pattern DURATION_LITERAL_WITH_DAYS = Pattern
             .compile("(-)?(([0-2])?\\d|[3][0-4]) (([0-1])?\\d|[2][0-3])(:([0-5])?\\d(:([0-5])?\\d(\\.\\d{1,9})?)?)?");
     public static final Pattern DURATION_LITERAL_NO_DAYS = Pattern.compile("(-)?\\d{1,3}:([0-5])?\\d(:([0-5])?\\d(\\.\\d{1,9})?)?");
-
+    protected final static Method systemNanoTimeMethod;
+    static final TimeZone GMT_TIMEZONE = TimeZone.getTimeZone("GMT");
     // Mappings from TimeZone identifications (prefixed by type: Windows, TZ name, MetaZone, TZ alias, ...), to standard TimeZone Ids
     private static final String TIME_ZONE_MAPPINGS_RESOURCE = "/com/mysql/cj/util/TimeZoneMapping.properties";
-
     private static Properties timeZoneMappings = null;
-
-    protected final static Method systemNanoTimeMethod;
 
     static {
         Method aMethod;
@@ -142,12 +133,9 @@ public class TimeUtil {
 
     /**
      * Returns the 'official' Java timezone name for the given timezone
-     * 
-     * @param timezoneStr
-     *            the 'common' timezone name
-     * @param exceptionInterceptor
-     *            exception interceptor
-     * 
+     *
+     * @param timezoneStr          the 'common' timezone name
+     * @param exceptionInterceptor exception interceptor
      * @return the Java timezone name for the given timezone
      */
     public static String getCanonicalTimeZone(String timezoneStr, ExceptionInterceptor exceptionInterceptor) {
@@ -176,20 +164,17 @@ public class TimeUtil {
         }
 
         throw ExceptionFactory.createException(InvalidConnectionAttributeException.class,
-                Messages.getString("TimeUtil.UnrecognizedTimeZoneId", new Object[] { timezoneStr }), exceptionInterceptor);
+                Messages.getString("TimeUtil.UnrecognizedTimeZoneId", new Object[]{timezoneStr}), exceptionInterceptor);
     }
 
     /**
      * Return a new Timestamp object which value is adjusted according to known DATE, DATETIME or TIMESTAMP field precision.
-     * 
-     * @param ts
-     *            an original Timestamp object, not modified by this method
-     * @param fsp
-     *            value in the range from 0 to 6 specifying fractional seconds precision
-     * @param serverRoundFracSecs
-     *            Flag indicating whether rounding or truncation occurs on server when inserting a TIME, DATE, or TIMESTAMP value with a fractional seconds part
-     *            into a column having the same type but fewer fractional digits: true means rounding, false means truncation. The proper value should be
-     *            detected by analyzing sql_mode server variable for TIME_TRUNCATE_FRACTIONAL presence.
+     *
+     * @param ts                  an original Timestamp object, not modified by this method
+     * @param fsp                 value in the range from 0 to 6 specifying fractional seconds precision
+     * @param serverRoundFracSecs Flag indicating whether rounding or truncation occurs on server when inserting a TIME, DATE, or TIMESTAMP value with a fractional seconds part
+     *                            into a column having the same type but fewer fractional digits: true means rounding, false means truncation. The proper value should be
+     *                            detected by analyzing sql_mode server variable for TIME_TRUNCATE_FRACTIONAL presence.
      * @return A new Timestamp object cloned from the original one and then rounded or truncated according to required fsp value
      */
     public static Timestamp adjustNanosPrecision(Timestamp ts, int fsp, boolean serverRoundFracSecs) {
@@ -209,15 +194,12 @@ public class TimeUtil {
 
     /**
      * Return a new LocalDateTime object which value is adjusted according to known DATE, DATETIME or TIMESTAMP field precision.
-     * 
-     * @param x
-     *            an original LocalDateTime object, not modified by this method
-     * @param fsp
-     *            value in the range from 0 to 6 specifying fractional seconds precision
-     * @param serverRoundFracSecs
-     *            Flag indicating whether rounding or truncation occurs on server when inserting a TIME, DATE, or TIMESTAMP value with a fractional seconds part
-     *            into a column having the same type but fewer fractional digits: true means rounding, false means truncation. The proper value should be
-     *            detected by analyzing sql_mode server variable for TIME_TRUNCATE_FRACTIONAL presence.
+     *
+     * @param x                   an original LocalDateTime object, not modified by this method
+     * @param fsp                 value in the range from 0 to 6 specifying fractional seconds precision
+     * @param serverRoundFracSecs Flag indicating whether rounding or truncation occurs on server when inserting a TIME, DATE, or TIMESTAMP value with a fractional seconds part
+     *                            into a column having the same type but fewer fractional digits: true means rounding, false means truncation. The proper value should be
+     *                            detected by analyzing sql_mode server variable for TIME_TRUNCATE_FRACTIONAL presence.
      * @return A new LocalDateTime object cloned from the original one and then rounded or truncated according to required fsp value
      */
     public static LocalDateTime adjustNanosPrecision(LocalDateTime x, int fsp, boolean serverRoundFracSecs) {
@@ -268,11 +250,9 @@ public class TimeUtil {
     /**
      * Return a string representation of a fractional seconds part. This method assumes that all Timestamp adjustments are already done before,
      * thus no rounding is needed, only a proper "0" padding to be done.
-     * 
-     * @param nanos
-     *            fractional seconds value
-     * @param fsp
-     *            required fractional part length
+     *
+     * @param nanos fractional seconds value
+     * @param fsp   required fractional part length
      * @return fractional seconds part as a string
      */
     public static String formatNanos(int nanos, int fsp) {
@@ -282,13 +262,10 @@ public class TimeUtil {
     /**
      * Return a string representation of a fractional seconds part. This method assumes that all Timestamp adjustments are already done before,
      * thus no rounding is needed, only a proper "0" padding to be done.
-     * 
-     * @param nanos
-     *            fractional seconds value
-     * @param fsp
-     *            required fractional part length
-     * @param truncateTrailingZeros
-     *            whether to remove trailing zero characters in a fractional part after formatting
+     *
+     * @param nanos                 fractional seconds value
+     * @param fsp                   required fractional part length
+     * @param truncateTrailingZeros whether to remove trailing zero characters in a fractional part after formatting
      * @return fractional seconds part as a string
      */
     public static String formatNanos(int nanos, int fsp, boolean truncateTrailingZeros) {
@@ -326,9 +303,8 @@ public class TimeUtil {
 
     /**
      * Loads a properties file that contains all kinds of time zone mappings.
-     * 
-     * @param exceptionInterceptor
-     *            exception interceptor
+     *
+     * @param exceptionInterceptor exception interceptor
      */
     private static void loadTimeZoneMappings(ExceptionInterceptor exceptionInterceptor) {
         timeZoneMappings = new Properties();
@@ -365,13 +341,10 @@ public class TimeUtil {
      * <p>
      * Note: The SimpleDateFormat object returned by this method contains a default Calendar with an altered TimeZone. It's safe to cache it between this method
      * calls because the Calendar object itself is not altered.
-     * 
-     * @param cachedSimpleDateFormat
-     *            existing SimpleDateFormat to use instead of creating a new one
-     * @param pattern
-     *            format pattern
-     * @param tz
-     *            {@link TimeZone} object replacing the default one
+     *
+     * @param cachedSimpleDateFormat existing SimpleDateFormat to use instead of creating a new one
+     * @param pattern                format pattern
+     * @param tz                     {@link TimeZone} object replacing the default one
      * @return {@link SimpleDateFormat} object
      */
     public static SimpleDateFormat getSimpleDateFormat(SimpleDateFormat cachedSimpleDateFormat, String pattern, TimeZone tz) {
@@ -388,11 +361,9 @@ public class TimeUtil {
      * <p>
      * Note: Don't cache the SimpleDateFormat object returned by this method. Other methods could rely on assumption that the cached SimpleDateFormat has a
      * default Calendar and that it is safe to change only it's time zone (see {@link #getSimpleDateFormat(SimpleDateFormat, String, TimeZone)}.
-     * 
-     * @param pattern
-     *            format pattern
-     * @param cal
-     *            {@link Calendar} object which clone is replacing the default Calendar
+     *
+     * @param pattern format pattern
+     * @param cal     {@link Calendar} object which clone is replacing the default Calendar
      * @return {@link SimpleDateFormat} object
      */
     public static SimpleDateFormat getSimpleDateFormat(String pattern, Calendar cal) {
@@ -442,7 +413,7 @@ public class TimeUtil {
         } else if (DURATION_LITERAL_WITH_DAYS.matcher(s).matches() || DURATION_LITERAL_NO_DAYS.matcher(s).matches()) {
             s = s.startsWith("-") ? s.replace("-", "-P") : "P" + s;
             s = s.contains(" ") ? s.replace(" ", "DT") : s.replace("P", "PT");
-            String[] ch = new String[] { "H", "M", "S" };
+            String[] ch = new String[]{"H", "M", "S"};
             int pos = 0;
             while (s.contains(":")) {
                 s = s.replaceFirst(":", ch[pos++]);

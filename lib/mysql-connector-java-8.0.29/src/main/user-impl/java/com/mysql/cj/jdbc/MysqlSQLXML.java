@@ -118,6 +118,18 @@ public class MysqlSQLXML implements SQLXML {
         this.exceptionInterceptor = exceptionInterceptor;
     }
 
+    private static void setFeature(Object factory, String name, boolean value) {
+        try {
+            if (factory instanceof DocumentBuilderFactory) {
+                ((DocumentBuilderFactory) factory).setFeature(name, value);
+            } else if (factory instanceof XMLReader) {
+                ((XMLReader) factory).setFeature(name, value);
+            }
+        } catch (Exception ignore) {
+            // no-op
+        }
+    }
+
     @Override
     public synchronized void free() throws SQLException {
         this.stringRep = null;
@@ -143,6 +155,15 @@ public class MysqlSQLXML implements SQLXML {
         return this.stringRep;
     }
 
+    @Override
+    public synchronized void setString(String str) throws SQLException {
+        checkClosed();
+        checkWorkingWithResult();
+
+        this.stringRep = str;
+        this.fromResultSet = false;
+    }
+
     private synchronized void checkClosed() throws SQLException {
         if (this.isClosed) {
             throw SQLError.createSQLException(Messages.getString("MysqlSQLXML.0"), this.exceptionInterceptor);
@@ -153,15 +174,6 @@ public class MysqlSQLXML implements SQLXML {
         if (this.workingWithResult) {
             throw SQLError.createSQLException(Messages.getString("MysqlSQLXML.1"), MysqlErrorNumbers.SQL_STATE_ILLEGAL_ARGUMENT, this.exceptionInterceptor);
         }
-    }
-
-    @Override
-    public synchronized void setString(String str) throws SQLException {
-        checkClosed();
-        checkWorkingWithResult();
-
-        this.stringRep = str;
-        this.fromResultSet = false;
     }
 
     public synchronized boolean isEmpty() throws SQLException {
@@ -255,20 +267,8 @@ public class MysqlSQLXML implements SQLXML {
                 throw sqlEx;
             }
         } else {
-            throw SQLError.createSQLException(Messages.getString("MysqlSQLXML.2", new Object[] { clazz.toString() }),
+            throw SQLError.createSQLException(Messages.getString("MysqlSQLXML.2", new Object[]{clazz.toString()}),
                     MysqlErrorNumbers.SQL_STATE_ILLEGAL_ARGUMENT, this.exceptionInterceptor);
-        }
-    }
-
-    private static void setFeature(Object factory, String name, boolean value) {
-        try {
-            if (factory instanceof DocumentBuilderFactory) {
-                ((DocumentBuilderFactory) factory).setFeature(name, value);
-            } else if (factory instanceof XMLReader) {
-                ((XMLReader) factory).setFeature(name, value);
-            }
-        } catch (Exception ignore) {
-            // no-op
         }
     }
 
@@ -343,7 +343,7 @@ public class MysqlSQLXML implements SQLXML {
                 throw sqlEx;
             }
         } else {
-            throw SQLError.createSQLException(Messages.getString("MysqlSQLXML.3", new Object[] { clazz.toString() }),
+            throw SQLError.createSQLException(Messages.getString("MysqlSQLXML.3", new Object[]{clazz.toString()}),
                     MysqlErrorNumbers.SQL_STATE_ILLEGAL_ARGUMENT, this.exceptionInterceptor);
         }
     }
@@ -477,16 +477,16 @@ public class MysqlSQLXML implements SQLXML {
      * The SimpleSaxToReader class is an adaptation of the SAX "Writer"
      * example from the Apache XercesJ-2 Project. The license for this
      * code is as follows:
-     * 
+     *
      * Licensed to the Apache Software Foundation (ASF) under one or more
      * contributor license agreements. See the NOTICE file distributed with
      * this work for additional information regarding copyright ownership.
      * The ASF licenses this file to You under the Apache License, Version 2.0
      * (the "License"); you may not use this file except in compliance with
      * the License. You may obtain a copy of the License at
-     * 
+     *
      * http://www.apache.org/licenses/LICENSE-2.0
-     * 
+     *
      * Unless required by applicable law or agreed to in writing, software
      * distributed under the License is distributed on an "AS IS" BASIS,
      * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -496,6 +496,7 @@ public class MysqlSQLXML implements SQLXML {
 
     class SimpleSaxToReader extends DefaultHandler {
         StringBuilder buf = new StringBuilder();
+        private boolean inCDATA = false;
 
         @Override
         public void startDocument() throws SAXException {
@@ -538,8 +539,6 @@ public class MysqlSQLXML implements SQLXML {
         public void ignorableWhitespace(char ch[], int start, int length) throws SAXException {
             characters(ch, start, length);
         }
-
-        private boolean inCDATA = false;
 
         public void startCDATA() throws SAXException {
             this.buf.append("<![CDATA[");

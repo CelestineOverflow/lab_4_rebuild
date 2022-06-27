@@ -51,11 +51,6 @@ import com.mysql.cj.protocol.InternalTime;
 import com.mysql.cj.protocol.InternalTimestamp;
 
 public class LocalTimeValueFactoryTest extends CommonAsserts {
-    @Test
-    public void testBasics() {
-        assertEquals("java.time.LocalTime", this.vf.getTargetTypeName());
-    }
-
     PropertySet pset = new DefaultPropertySet();
     LocalTimeValueFactory vf = new LocalTimeValueFactory(this.pset, new WarningListener() {
         @Override
@@ -63,6 +58,11 @@ public class LocalTimeValueFactoryTest extends CommonAsserts {
             assertEquals("Precision lost converting DATETIME/TIMESTAMP to java.time.LocalTime", warning);
         }
     });
+
+    @Test
+    public void testBasics() {
+        assertEquals("java.time.LocalTime", this.vf.getTargetTypeName());
+    }
 
     @Test
     public void testCreateFromDate() {
@@ -152,7 +152,7 @@ public class LocalTimeValueFactoryTest extends CommonAsserts {
             @Override
             public Void call() throws Exception {
                 Field f = new Field("test", "test", 33, "UTF-8", MysqlType.VARCHAR, 2);
-                LocalTimeValueFactoryTest.this.vf.createFromBytes(new byte[] { '1' }, 0, 1, f);
+                LocalTimeValueFactoryTest.this.vf.createFromBytes(new byte[]{'1'}, 0, 1, f);
                 return null;
             }
         });
@@ -184,7 +184,7 @@ public class LocalTimeValueFactoryTest extends CommonAsserts {
         assertThrows(DataConversionException.class, "Cannot convert string '1' to java.time.LocalTime value", new Callable<Void>() {
             @Override
             public Void call() throws Exception {
-                LocalTimeValueFactoryTest.this.vf.createFromBytes(new byte[] { '1' }, 0, 1, f);
+                LocalTimeValueFactoryTest.this.vf.createFromBytes(new byte[]{'1'}, 0, 1, f);
                 return null;
             }
         });
@@ -211,7 +211,7 @@ public class LocalTimeValueFactoryTest extends CommonAsserts {
         assertThrows(DataConversionException.class, "Unsupported conversion from BIT to java.time.LocalTime", new Callable<Void>() {
             @Override
             public Void call() throws Exception {
-                LocalTimeValueFactoryTest.this.vf.createFromBit(new byte[] { 1 }, 0, 2);
+                LocalTimeValueFactoryTest.this.vf.createFromBit(new byte[]{1}, 0, 2);
                 return null;
             }
         });

@@ -56,7 +56,7 @@ public class StringRegressionTest extends BaseTestCase {
 
     /**
      * Tests newline being treated correctly.
-     * 
+     *
      * @throws Exception
      */
     @Test
@@ -79,7 +79,7 @@ public class StringRegressionTest extends BaseTestCase {
 
     /**
      * Tests that single-byte character conversion works correctly.
-     * 
+     *
      * @throws Exception
      */
     // TODO: Use Unicode Literal escapes for this, for now, this test is broken :(
@@ -92,7 +92,7 @@ public class StringRegressionTest extends BaseTestCase {
 
     /**
      * Tests fix for BUG#7601, '+' duplicated in fixDecimalExponent().
-     * 
+     *
      * @throws Exception
      */
     @Test
@@ -189,7 +189,7 @@ public class StringRegressionTest extends BaseTestCase {
 
     /**
      * Tests fix for BUG#11614 - StringUtils.getBytes() doesn't work when using multibyte character encodings and a length in _characters_ is specified.
-     * 
+     *
      * @throws Exception
      */
     @Test
@@ -241,9 +241,9 @@ public class StringRegressionTest extends BaseTestCase {
 
     /**
      * Tests fix for BUG#25047 - StringUtils.indexOfIgnoreCaseRespectQuotes() isn't case-insensitive on the first character of the target.
-     * 
+     * <p>
      * UPD: Method StringUtils.indexOfIgnoreCaseRespectQuotes() was replaced by StringUtils.indexOfIgnoreCase()
-     * 
+     *
      * @throws Exception
      */
     @Test
@@ -259,7 +259,7 @@ public class StringRegressionTest extends BaseTestCase {
 
     /**
      * Tests fix for BUG#64731 - StringUtils.getBytesWrapped throws StringIndexOutOfBoundsException.
-     * 
+     *
      * @throws Exception
      */
     @Test

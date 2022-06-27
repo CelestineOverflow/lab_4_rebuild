@@ -56,13 +56,6 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
 
     private static Map<ServerVersion, String> keywordsCache = Collections.synchronizedMap(new LRUCache<>(10));
 
-    protected enum FunctionConstant {
-        // COLUMN_TYPE values
-        FUNCTION_COLUMN_UNKNOWN, FUNCTION_COLUMN_IN, FUNCTION_COLUMN_INOUT, FUNCTION_COLUMN_OUT, FUNCTION_COLUMN_RETURN, FUNCTION_COLUMN_RESULT,
-        // NULLABLE values
-        FUNCTION_NO_NULLS, FUNCTION_NULLABLE, FUNCTION_NULLABLE_UNKNOWN;
-    }
-
     protected DatabaseMetaDataUsingInfoSchema(JdbcConnection connToSet, String databaseToSet, ResultSetFactory resultSetFactory) throws SQLException {
         super(connToSet, databaseToSet, resultSetFactory);
     }
@@ -288,7 +281,7 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
 
     @Override
     public java.sql.ResultSet getCrossReference(String primaryCatalog, String primarySchema, String primaryTable, String foreignCatalog, String foreignSchema,
-            String foreignTable) throws SQLException {
+                                                String foreignTable) throws SQLException {
         if (primaryTable == null) {
             throw SQLError.createSQLException(Messages.getString("DatabaseMetaData.2"), MysqlErrorNumbers.SQL_STATE_ILLEGAL_ARGUMENT,
                     getExceptionInterceptor());
@@ -1094,10 +1087,8 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
 
     /**
      * Getter to DatabaseMetaData.function* constants.
-     * 
-     * @param constant
-     *            the constant id from DatabaseMetaData fields to return.
-     * 
+     *
+     * @param constant the constant id from DatabaseMetaData fields to return.
      * @return one of the java.sql.DatabaseMetaData#function* fields.
      */
     protected int getFunctionConstant(FunctionConstant constant) {
@@ -1284,5 +1275,12 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
     public ResultSet getBestRowIdentifier(String catalog, String schema, String table, int scope, boolean nullable) throws SQLException {
         // TODO Implement with I_S
         return super.getBestRowIdentifier(catalog, schema, table, scope, nullable);
+    }
+
+    protected enum FunctionConstant {
+        // COLUMN_TYPE values
+        FUNCTION_COLUMN_UNKNOWN, FUNCTION_COLUMN_IN, FUNCTION_COLUMN_INOUT, FUNCTION_COLUMN_OUT, FUNCTION_COLUMN_RETURN, FUNCTION_COLUMN_RESULT,
+        // NULLABLE values
+        FUNCTION_NO_NULLS, FUNCTION_NULLABLE, FUNCTION_NULLABLE_UNKNOWN;
     }
 }

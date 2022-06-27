@@ -47,6 +47,35 @@ import com.mysql.cj.exceptions.WrongArgumentException;
  */
 public class JsonDocTest {
 
+    protected static <EX extends Throwable> EX assertThrows(Class<EX> throwable, Callable<?> testRoutine) {
+        try {
+            testRoutine.call();
+        } catch (Throwable t) {
+            assertTrue(throwable.isAssignableFrom(t.getClass()),
+                    "Expected exception of type '" + throwable.getName() + "' but instead a exception of type '" + t.getClass().getName() + "' was thrown.");
+            return throwable.cast(t);
+        }
+        fail("Expected exception of type '" + throwable.getName() + "'.");
+
+        // never reaches here
+        return null;
+    }
+
+    protected static <EX extends Throwable> EX assertThrows(Class<EX> throwable, String msgMatchesRegex, Callable<?> testRoutine) {
+        try {
+            testRoutine.call();
+        } catch (Throwable t) {
+            assertTrue(throwable.isAssignableFrom(t.getClass()),
+                    "Expected exception of type '" + throwable.getName() + "' but instead a exception of type '" + t.getClass().getName() + "' was thrown.");
+            assertTrue(t.getMessage().matches(msgMatchesRegex), "The error message [" + t.getMessage() + "] was expected to match [" + msgMatchesRegex + "].");
+            return throwable.cast(t);
+        }
+        fail("Expected exception of type '" + throwable.getName() + "'.");
+
+        // never reaches here
+        return null;
+    }
+
     @Test
     public void testEscaping() throws Exception {
 
@@ -713,34 +742,5 @@ public class JsonDocTest {
     @Test
     public void testJsonNumberAtEnd() throws Exception {
         JsonParser.parseDoc(new StringReader("{\"x\":2}"));
-    }
-
-    protected static <EX extends Throwable> EX assertThrows(Class<EX> throwable, Callable<?> testRoutine) {
-        try {
-            testRoutine.call();
-        } catch (Throwable t) {
-            assertTrue(throwable.isAssignableFrom(t.getClass()),
-                    "Expected exception of type '" + throwable.getName() + "' but instead a exception of type '" + t.getClass().getName() + "' was thrown.");
-            return throwable.cast(t);
-        }
-        fail("Expected exception of type '" + throwable.getName() + "'.");
-
-        // never reaches here
-        return null;
-    }
-
-    protected static <EX extends Throwable> EX assertThrows(Class<EX> throwable, String msgMatchesRegex, Callable<?> testRoutine) {
-        try {
-            testRoutine.call();
-        } catch (Throwable t) {
-            assertTrue(throwable.isAssignableFrom(t.getClass()),
-                    "Expected exception of type '" + throwable.getName() + "' but instead a exception of type '" + t.getClass().getName() + "' was thrown.");
-            assertTrue(t.getMessage().matches(msgMatchesRegex), "The error message [" + t.getMessage() + "] was expected to match [" + msgMatchesRegex + "].");
-            return throwable.cast(t);
-        }
-        fail("Expected exception of type '" + throwable.getName() + "'.");
-
-        // never reaches here
-        return null;
     }
 }

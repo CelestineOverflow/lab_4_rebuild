@@ -16,6 +16,14 @@ public class Professor implements dataArray {
         this.courseID = courseID;
     }
 
+    static public String[][] arrayValues2D(ArrayList<Professor> data) {
+        String[][] data2D = new String[data.size()][Professor.LABELS.length];
+        for (int i = 0; i < data.size(); i++) {
+            data2D[i] = data.get(i).arrayValues();
+        }
+        return data2D;
+    }
+
     public void printRaw() {
         String spacer = " - ";
         System.out.println(e_number + spacer + firstName + spacer + lastName + spacer + courseID);
@@ -25,13 +33,5 @@ public class Professor implements dataArray {
     public String[] arrayValues() {
         String[] data = {e_number, firstName, lastName, courseID};
         return data;
-    }
-
-    static public String[][] arrayValues2D(ArrayList<Professor> data) {
-        String[][] data2D = new String[data.size()][Professor.LABELS.length];
-        for (int i = 0; i < data.size(); i++) {
-            data2D[i] = data.get(i).arrayValues();
-        }
-        return data2D;
     }
 }

@@ -82,23 +82,6 @@ public class XProtocolAsyncTest extends InternalXBaseTestCase {
         }
     }
 
-    /**
-     * Helper class to hold values across threads and closures.
-     * 
-     * @param <T>
-     */
-    public static class ValueHolder<T> implements Consumer<T>, Supplier<T> {
-        T val;
-
-        public void accept(T t) {
-            this.val = t;
-        }
-
-        public T get() {
-            return this.val;
-        }
-    }
-
     @Test
     public void simpleSuccessfulQuery() throws Exception {
         assumeTrue(this.isSetForXTests, PropertyDefinitions.SYSP_testsuite_url_mysqlx + " must be set to run this test.");
@@ -107,7 +90,7 @@ public class XProtocolAsyncTest extends InternalXBaseTestCase {
             String collName = createTempTestCollection(this.protocol);
 
             String json = "{'_id': '85983efc2a9a11e5b345feff819cdc9f', 'testVal': 1, 'insertedBy': 'Jess'}".replaceAll("'", "\"");
-            this.protocol.send(this.messageBuilder.buildDocInsert(getTestDatabase(), collName, Arrays.asList(new String[] { json }), false), 0);
+            this.protocol.send(this.messageBuilder.buildDocInsert(getTestDatabase(), collName, Arrays.asList(new String[]{json}), false), 0);
             this.protocol.readQueryResult(new StatementExecuteOkBuilder());
 
             final ValueHolder<ColumnDefinition> metadataHolder = new ValueHolder<>();
@@ -132,7 +115,7 @@ public class XProtocolAsyncTest extends InternalXBaseTestCase {
 
                     } else if (entity instanceof Row) {
                         if (this.metadata == null) {
-                            this.metadata = new DefaultColumnDefinition(this.fields.toArray(new Field[] {}));
+                            this.metadata = new DefaultColumnDefinition(this.fields.toArray(new Field[]{}));
                             metadataHolder.accept(this.metadata);
                         }
                         rowHolder.get().add((Row) entity);
@@ -164,6 +147,23 @@ public class XProtocolAsyncTest extends InternalXBaseTestCase {
             assertNull(excHolder.get());
         } finally {
             dropTempTestCollection(this.protocol);
+        }
+    }
+
+    /**
+     * Helper class to hold values across threads and closures.
+     *
+     * @param <T>
+     */
+    public static class ValueHolder<T> implements Consumer<T>, Supplier<T> {
+        T val;
+
+        public void accept(T t) {
+            this.val = t;
+        }
+
+        public T get() {
+            return this.val;
         }
     }
 }
